@@ -13,9 +13,18 @@ is an issue, or change in configuration. A summary e-mail is sent daily.
 
 # Initial Setup
 
+## Prerequeists
+
+### Ubuntu
+
++ python-dateutil
++ unzip
+
 # TODO
 
 + ttnctl
+   + [ ] Provide registration link if not logged in
+   + [ ] Get default e-mail from user status
    + [x] Automatically download
    + [ ] Check for updates
 + [ ] Include log in daily e-mail
