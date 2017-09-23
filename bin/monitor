@@ -597,7 +597,7 @@ def send_alerts(options, destinations):
 
     for destination, gateways in destinations.items():
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = "TTN Gateway alert %s" % datetime.datetime.now(tzlocal()).strftime("%v %R %Z")
+        msg['Subject'] = "TTN Gateway alert %s" % datetime.datetime.now(tzlocal()).strftime("%F %R %Z")
         msg['From'] = options.fromaddr
         msg['To'] = destination
         if options.cc:
