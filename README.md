@@ -20,5 +20,6 @@ is an issue, or change in configuration. A summary e-mail is sent daily.
 + Configuration
    + [ ] Additional parameters per gateway id
    + [ ] All command line parameters
++ [ ] Pushbullet support
 + [ ] Slack postings
 + [ ] Web page
