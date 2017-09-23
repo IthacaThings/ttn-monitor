@@ -695,7 +695,7 @@ def main():
     #   Other options
     group = parser.add_argument_group("Other options")
     group.add_argument("--binary",
-                       dest="binary", default="bin/ttnctl",
+                       dest="binary",
                        help="Path to binary")
     group.add_argument("--noload",
                        dest="load", default=True,
@@ -706,6 +706,14 @@ def main():
                        help="Name of status DB")
 
     options = parser.parse_args()
+
+    # Try to find ttnctl binary
+    if not options.binary:
+        for dir in [ ".", os.path.dirname(sys.argv[0]) ]:
+            path = os.path.join(dir, "ttnctl")
+            if os.access(path, os.X_OK):
+                options.binary = path
+                break
 
     gateways = Gateways(options)
 
