@@ -14,11 +14,12 @@ all:	fetch
 fetch:: ${TTNCLI}
 
 ${TTNCLI}: ${TTNCLI_ZIP}
-	unzip -u "$<"
+	unzip -q -u "$<"
 	chmod 755 "$@"
+	rm "$<"
 
 ${TTNCLI_ZIP}: true
-	wget -N "${TTNCLI_URL}"
+	wget --quiet -N "${TTNCLI_URL}"
 
 #
 clean:
