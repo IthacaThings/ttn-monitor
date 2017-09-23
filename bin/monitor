@@ -664,7 +664,7 @@ class User(object):
         self._options = options
 
         try:
-            cmd = [ self._options.binary, "user", "status" ]
+            cmd = [ self._options.binary, "user" ]
             if self._options.debug:
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
