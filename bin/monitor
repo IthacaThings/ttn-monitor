@@ -110,7 +110,8 @@ class Gateway(object):
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
         except subprocess.CalledProcessError as e:
-            print("ERR: %s returns %d" % (" ".join(cmd), e.returncode), file=sys.stderr)
+            if self._options.verbose:
+                print("ERR: %s returns %d" % (" ".join(cmd), e.returncode), file=sys.stderr)
             lines = e.output
 
         response = ""
@@ -126,7 +127,8 @@ class Gateway(object):
                     print("DBG: %s" % line)
                 continue
             if sline.startswith("FATAL"):
-                print(sline, file=sys.stderr)
+                if self._options.verbose:
+                    print(sline, file=sys.stderr)
                 if sline.find('Please login with ttnctl user login') != -1:
                     sys.exit("Go to %s to get an access code" % register_url, file=sys.stderr)
                 raise GatewayError(sline)
@@ -521,7 +523,8 @@ class Gateways(object):
         except OSError as e:
             sys.exit("%s: %s" % (self._options.binary, e))
         except subprocess.CalledProcessError as e:
-            rc = e.returncode
+            if self._options.verbose:
+                print("ERR: %s returns %d" % (" ".join(cmd), e.returncode), file=sys.stderr)
             raise GatewayError(e.output)
 
         for gateway in self._gateways.values():
