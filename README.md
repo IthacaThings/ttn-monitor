@@ -23,8 +23,8 @@ is an issue, or change in configuration. A summary e-mail is sent daily.
 # TODO
 
 + ttnctl
-   + [ ] Provide registration link if not logged in
-   + [ ] Get default e-mail from user status
+   + [x] Provide registration link if not logged in
+   + [x] Get default e-mail from user status
    + [x] Automatically download
    + [ ] Check for updates
 + [ ] Include log in daily e-mail

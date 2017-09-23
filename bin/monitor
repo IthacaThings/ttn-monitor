@@ -536,7 +536,8 @@ class Gateways(object):
                     print("DBG: %s" % line)
                 continue
             if sline.startswith("FATAL "):
-                print(sline, file=sys.stderr)
+                if self._options.verbose:
+                    print(sline, file=sys.stderr)
                 if sline.find('Please login with ttnctl user login') != -1:
                     sys.exit("Go to %s to get an access code" % register_url, file=sys.stderr)
                 raise GatewayError(sline)
@@ -590,14 +591,17 @@ class Gateways(object):
         ''' Return a spefic gateway '''
         return self._gateways[id]
 
-def send_alerts(options, destinations):
+def send_alerts(options, user, destinations):
     ''' Send e-mail about each gateway '''
+
+    fromaddr = options.fromaddr if options.fromadder else user.email
 
     for destination, gateways in destinations.items():
         msg = MIMEMultipart('alternative')
         msg['Subject'] = "TTN Gateway alert %s" % datetime.datetime.now(tzlocal()).strftime("%F %R %Z")
-        msg['From'] = options.fromaddr
+        msg['From'] = fromaddr
         msg['To'] = destination
+        # XXX - Include user on cc list?
         if options.cc:
             msg['Cc'] = ", ".join(options.cc)
 
@@ -609,9 +613,9 @@ def send_alerts(options, destinations):
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
         s = smtplib.SMTP('localhost')
-        dest = [ 'jch@honig.net' if options.test else destination ]
+        dest = [ user.email if options.test else destination ]
         dest.extend(options.cc)
-        s.sendmail(options.fromaddr, dest, msg.as_string())
+        s.sendmail(fromaddr, dest, msg.as_string())
         s.quit()
 
 def send_gateways(options, all_gateways):
@@ -646,6 +650,70 @@ def send_gateways(options, all_gateways):
         s.sendmail(options.fromaddr, dest, msg.as_string())
         s.quit()
 
+class User(object):
+    """ Get info about user """
+
+    INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
+
+    def __init__(self, options):
+        """ Get user info """
+
+        self._options = options
+
+        try:
+            cmd = [ self._options.binary, "user", "status" ]
+            if self._options.debug:
+                print("DBG: %s" % " ".join(cmd))
+            lines = subprocess.check_output(cmd)
+        except OSError as e:
+            sys.exit("%s: %s" % (self._options.binary, e))
+        except subprocess.CalledProcessError as e:
+            lines = e.output
+
+        for line in lines.split("\n"):
+            sline = re.sub(_ANSI_RE, '', line).strip()
+            if sline == "":
+                continue
+            if sline.startswith("INFO"):
+                if self._options.debug:
+                    print("DBG: %s" % line)
+                continue
+
+            if sline.startswith("FATAL"):
+                if self._options.verbose:
+                    print(sline, file=sys.stderr)
+                if sline.find('Please login with ttnctl user login') != -1:
+                    sys.exit("Go to %s to get an access code" % register_url)
+                sys.exit(sline)
+
+            match = self.INFO_RE.match(line)
+            if not match:
+                continue
+
+            key = match.group('key')
+            value = match.group('value')
+            if key == 'Email':
+                self._email = value
+            elif key == 'Username':
+                self._username = value
+            elif key == 'Name':
+                # XXX - Strip {}
+                self._name = value
+
+    @property
+    def email(self):
+        """ Return e-mail """
+        return self._email
+
+    @property
+    def username(self):
+        """ Return username """
+        return self._username
+
+    @property
+    def name(self):
+        """ Return name """
+        return self._name
 
 def main():
     """ Figure out what we should do """
@@ -679,7 +747,7 @@ def main():
                        dest="late", default=90,
                        help="Interval to mark gateway as not responding")
     group.add_argument("--from",
-                       dest="fromaddr", type=str, required=True,
+                       dest="fromaddr",
                        help="From address for notification emails")
     group.add_argument("--cc",
                        dest="cc", default=[],
@@ -715,6 +783,12 @@ def main():
                 options.binary = path
                 break
 
+    # Get user info
+    user = User(options)
+
+    if not options.fromaddr:
+        options.fromaddr = user.email
+
     gateways = Gateways(options)
 
     while gateways.poll():
@@ -741,7 +815,7 @@ def main():
                 except KeyError:
                     destinations[dest] = [ gateway ]
 
-        send_alerts(options, destinations)
+        send_alerts(options, user, destinations)
 
         # Save current status
         gateways.save()
