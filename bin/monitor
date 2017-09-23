@@ -1,0 +1,757 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import argparse
+import copy
+import datetime
+import dateutil
+import os
+import re
+import smtplib
+import subprocess
+import sys
+import time
+
+from dateutil.tz import tzlocal, tzoffset
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+from pprint import pprint, pformat
+
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
+"""
+MIT License
+
+Copyright (c) 2017 Jeffrey C Honig
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+register_url = "https://account.thethingsnetwork.org/users/authorize?client_id=ttnctl&redirect_uri=/oauth/callback/ttnctl&response_type=code"
+
+_ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
+
+#
+#	Gateway list
+#
+
+class GatewayError(Exception):
+    pass
+
+class Gateway(object):
+    """Class to hold Gateway info"""
+
+    info_re = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
+
+    # 2017-08-17 18:05:16.935947527 -0400 EDT
+    _TIME_RE = re.compile(r'(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s+(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<seconds>\d{2})(\.\d+)?\s+(?P<offhour>[+-]\d{2})(?P<offmin>\d{2})\s+(?P<tzname>[A-Z]+)')
+
+    def __init__(self, options, id, frequency_plan, latitude, longitude, router):
+        """"""
+        self._options = options
+        self._id = id
+        self._frequency_plan = frequency_plan
+        self._latitude = float(latitude)
+        self._longitude = float(longitude)
+        self._router = router
+        self._active = True
+        self._was_active = True
+        self._info = {}
+        self._notices = {}
+        self._offset = datetime.timedelta(0)
+        self._late = datetime.timedelta(0)
+        self._notices = [ ]
+        self._status_error = { 'current': None,
+                               'last': None }
+
+    def sign(self, x):
+        """ Return sign of x """
+
+        if x > 0:
+            return 1
+        elif x < 0:
+            return -1
+        else:
+            return 0
+        
+    def __repr__(self):
+        return "%s: %s %s %f, %f %s" % (self._id, self._activated, self._frequency_plan, self._latitude, self._longitude, self._router)
+
+    def __str__(self):
+        return "%s: %s %s %f, %f %s" % (self._id, self._activated, self._frequency_plan, self._latitude, self._longitude, self._router)
+
+    def _get_response(self, *args):
+    	""" Issue a command and get the response """
+
+	cmd = [ self._options.binary ]
+	cmd.extend(args)
+
+	try:
+            if self._options.debug:
+                print("DBG: %s" % " ".join(cmd))
+            lines = subprocess.check_output(cmd)
+        except subprocess.CalledProcessError as e:
+            print("ERR: %s returns %d" % (" ".join(cmd), e.returncode), file=sys.stderr)
+            lines = e.output
+
+        response = ""
+        collaborators = False
+        username = None
+        self._collaborators = { }
+	for line in lines.split("\n"):
+
+            sline = re.sub(_ANSI_RE, '', line).strip()
+            if sline == "":
+                continue
+            if sline.startswith("INFO"):
+                if self._options.debug:
+                    print("DBG: %s" % line)
+                continue
+            if sline.startswith("FATAL"):
+                print(sline, file=sys.stderr)
+                if sline.find('Please login with ttnctl user login') != -1:
+                    sys.exit("Go to %s to get an access code" % register_url, file=sys.stderr)
+                raise GatewayError(sline)
+
+            if sline == "Collaborators:":
+                collaborators = True
+                continue
+
+            if collaborators and sline.startswith('- Username: '):
+                username = sline.split(': ')[1].strip()
+                continue
+
+            match = self.info_re.match(line)
+            if not match:
+                continue
+
+            if collaborators:
+                if match.group('key') == "Rights":
+                    self._collaborators[username] = match.group('value').split(', ')
+                    username = None
+
+            key = match.group('key')
+            value = match.group('value')
+            if key in [ "Description", "Location" ]:
+                key += '.' + args[1]
+            self._info[key] = value
+
+    def info(self):
+        """ Return info array """
+        return self._info
+
+    def get_info(self):
+        """ Get additional info via 'info' subcommand """
+
+        if self._options.debug:
+            print("GET INFO: %s" % self)
+
+        try:
+            self._info_old = copy.copy(self._info)
+            self._get_response("gateway", "info", self._id)
+        except GatewayError as e:
+            print(e)
+            
+    def get_status(self):
+        """ Get additional info via 'info' subcommand """
+
+        if self._options.debug:
+            print("GET STATUS: %s" % self)
+
+        try:
+            self._get_response("gateway", "status", self._id)
+            self._status_error['current'] = None
+        except GatewayError as e:
+            self._info['Last seen'] = None
+            self._info['Reported time'] = None
+            self._status_error['current'] = e.message
+        self.status_time = datetime.datetime.now(tzlocal())
+
+    def check_status(self):
+        ''' Check the status results '''
+        if self.status_error_current != self.status_error_last:
+            if self.status_error_current:
+                self.notice(self.status_error_current)
+            else:
+                self.notice("Status successfully obtained")
+            self.status_error_last = self.status_error_current
+
+        if self.reported_time and self.last_seen:
+            offset = self.reported_time - self.last_seen
+            if self.sign(offset.total_seconds()) != self.sign(self._offset.total_seconds()):
+                # XXX - ahead by 2, behind by 30?
+                if abs(offset.total_seconds() > 2):
+                    if offset.total_seconds() > 0:
+                        self.notice("Gateway time is ahead by %s" % offset)
+                    elif offset.total_seconds() < 2:
+                        self.notice("Gateway time is behind by %s" % offset)
+                elif abs(self.offset.total_seconds()) < 2:
+                    if abs(self._offset.total_seconds()) >= 2:
+                        self.notice("Gateway time is within 2 seconds")
+            self._offset = offset
+
+            late = self.status_time - self.last_seen
+            # XXX - Fix logic
+            if late.total_seconds() > self._options.late:
+                if self._late.total_seconds() < self._options.late:
+                    self.notice("No response from gateway in %s" % late)
+            elif late.total_seconds() <= self._options.late:
+                if self._late.total_seconds() >= self._options.late:
+                    self.notice("Gateway has responded in the last minute")
+            self._late = late
+
+        for key in [ 'Description.info',
+                     'Owner',
+                     'Frequency Plan',
+                     'Location.info',
+                     'Location.status',
+                     'Placement',
+                     'Platform',
+                     'Router',
+                     'Bridge',
+                     'IP Address',
+                     'Brand',
+                     'Model' ]:
+            try:
+                if self._info_old[key] != self._info[key]:
+                    self.notice('"%s" changed "%s" -> "%s"' % (key, self._info_old[key], self._info[key]))
+            except KeyError:
+                pass
+                
+        
+    def pretty(self):
+        ''' Pretty print a bunch of gateway info '''
+
+        lines = []
+        for key in [ 'Gateway ID',
+                     'Description.info',
+                     'Owner',
+                     'Frequency Plan',
+                     'Location.info',
+                     'Location.status',
+                     'Placement',
+                     'Platform',
+                     'Router',
+                     'Bridge',
+                     'IP Address',
+                     'Rtt',
+                     'Rx',
+                     'Tx' ]:
+            try:
+                lines.append("\t%s:\t%s" % (key, self._info[key]))
+            except KeyError:
+                pass
+
+        return lines
+        
+        
+    def is_active(self):
+        ''' Are we active '''
+        return self._active
+
+    def active(self):
+        ''' Mark active '''
+        self._active = True
+
+    def notice(self, msg):
+        ''' Add a notice '''
+        if self._options.debug:
+            print("NOTICE: %s" % msg)
+        self._notices.append(msg)
+
+    def notices(self):
+        ''' Read notices '''
+        return self._notices
+
+    def clear(self):
+        ''' Clear notices '''
+        self._notices = []
+
+    @property
+    def was_active(self):
+        ''' Was active last time '''
+        return self._was_active
+
+    def save_active(self):
+        ''' Set was active last time '''
+        self._was_active = self._active
+        self._active = False
+
+    @property
+    def status_error_current(self):
+        ''' Return status_error string '''
+        return self._status_error['current']
+
+    @property
+    def status_error_last(self):
+        ''' Return status_error string '''
+        return self._status_error['last']
+
+    @status_error_last.setter
+    def status_error_last(self, error):
+        ''' Set last status error '''
+        self._status_error['last'] = error
+
+    @property
+    def offset(self):
+        ''' Return time offset '''
+        return self._offset
+
+    @offset.setter
+    def offset(self, offset):
+        ''' Set time offset '''
+        self._offset = offset
+
+    @property
+    def late(self):
+        ''' Return time late '''
+        return self._late
+
+    @late.setter
+    def late(self, late):
+        ''' Set time late '''
+        self._late = late
+
+    @property
+    def id(self):
+        ''' Get name '''
+        return self._id
+
+    @property
+    def activated(self):
+        ''' Get name '''
+        return self._activated
+
+    @activated.setter
+    def activated(self, activated):
+        ''' Set frequency plan '''
+        self._activated = activated
+
+    @property
+    def latitude(self):
+        ''' Get name '''
+        return self._latitude
+
+    @latitude.setter
+    def latitude(self, latitude):
+        ''' Set frequency plan '''
+        self._latitude = float(latitude)
+
+    @property
+    def longitude(self):
+        ''' Get name '''
+        return self._longitude
+
+    @longitude.setter
+    def longitude(self, longitude):
+        ''' Set frequency plan '''
+        self._longitude = float(longitude)
+
+    @property
+    def frequency_plan(self):
+        ''' Get name '''
+        return self._frequency_plan
+
+    @frequency_plan.setter
+    def frequency_plan(self, frequency_plan):
+        ''' Set frequency plan '''
+        self._frequency_plan = frequency_plan
+
+    def _time(self, timestr):
+        ''' Convert to a tm '''
+
+        if timestr == None:
+            return timestr
+
+        match = self._TIME_RE.match(timestr)
+        if not match:
+            return None
+
+        # Convert offset into minutes
+        offset = int(match.group('offhour')) * 60
+        if offset < 0:
+            offset -= int(match.group('offmin'))
+        else:
+            offset += int(match.group('offmin'))
+
+        tzone = tzoffset(match.group('tzname'), offset * 60)
+        result = datetime.datetime(int(match.group('year')),
+                                   int(match.group('month')),
+                                   int(match.group('day')),
+                                   int(match.group('hour')),
+                                   int(match.group('minute')),
+                                   int(match.group('seconds')),
+                                   tzinfo=tzone)
+        return result
+
+    @property
+    def last_seen(self):
+        ''' Get Last seen from info '''
+        try:
+            return self._time(self._info['Last seen'])
+        except KeyError:
+            return None
+        
+    @property
+    def reported_time(self):
+        ''' Get Reported time from info '''
+        try:
+            return self._time(self._info['Reported time'])
+        except KeyError:
+            return None
+        
+    @property
+    def description(self):
+        ''' Get Description from info '''
+
+        try:
+            return self._info['Description.info']
+        except KeyError:
+            return None
+
+    @property
+    def contact_email(self):
+        ''' Contact email '''
+        try:
+            return self._info['Contact email']
+        except KeyError:
+            return None
+
+class Gateways(object):
+    ''' Hold and dump/restore a list of Gateways '''
+
+    #        ID              Activated       Frequency Plan  Coordinates                        
+    #1       ttn-ith-test    false           AU_915_928      (42.517288, -76.710183, %!f(int=0))    
+    _LINE_RE = re.compile("^\d+\s+(?P<id>[a-z0-9-]+)\s+(?P<activated>true|false)\s+(?P<frequency_plan>(AU|EU|IN|KR|US|AS)_\d{3}_\d{3})\s+\((?P<lat>-?\d+\.\d+),\s+(?P<long>-?\d+.\d+),.*$")
+
+    def __init__(self, options):
+        self._options = options
+        self._gateways = dict()
+        self._loaded = False
+        if options.load:
+            try:
+                self.load()
+            except (EOFError, IOError, pickle.PickleError) as error:
+                print(error, file=sys.stderr)
+
+    def load(self):
+        ''' Load the list of gateways '''
+        filep = open(os.path.expanduser(self._options.statusdb), 'rb')
+        self._gateways = pickle.load(filep)
+        self._loaded = True
+        if self._options.verbose:
+            print("Loaded prior status about %d gateways from %s" % (len(self._gateways), self._options.statusdb))
+        filep.close()
+
+    def save(self):
+        ''' Dump the list of gateways '''
+
+        filep = None
+        try:
+            filep = open(os.path.expanduser(self._options.statusdb), 'wb')
+        except IOError as error:
+            print(error, file=sys.stderr)
+            return
+
+        try:
+            pickle.dump(self._gateways, filep, protocol=-1)
+        except pickle.PickleError as error:
+            print(error, file=sys.stderr)
+
+        if not filep:
+            return
+
+        try:
+            filep.close()
+            if self._options.verbose:
+                print("Wrote prior status to %s" % self._options.statusdb)
+        except IOError as error:
+            print(error, file=sys.stderr)
+
+    def poll(self):
+        ''' Update the list of gateways'''
+
+        if self._options.verbose:
+            print("Polling gateways")
+
+        for delay in range(1,5):
+            try:
+                self._list()
+                break
+            except GatewayError as err:
+                print(err, file=sys.stderr)
+                time.sleep(time*30)
+            else:
+                # XXX - What to do here?
+                pass
+
+        if self._options.verbose:
+            print("Found %d gateways:" % len(self._gateways))
+            for gateway in self._gateways.values():
+                print("\t%s - %s" % (gateway.id, gateway.description))
+
+        return True
+
+    def _list(self):
+        """Return a dict of Gateways"""
+
+        rc = 0
+        try:
+            cmd = [ self._options.binary, "gateway", "list" ]
+            if self._options.debug:
+                print("DBG: %s" % " ".join(cmd))
+            lines = subprocess.check_output(cmd)
+        except subprocess.CalledProcessError as e:
+            rc = e.returncode
+            raise GatewayError(e.output)
+
+        for gateway in self._gateways.values():
+            gateway.save_active()
+
+        for line in lines.split("\n"):
+            sline = re.sub(_ANSI_RE, '', line).strip()
+            if sline == "":
+                continue
+            if sline.startswith("INFO "):
+                if self._options.debug:
+                    print("DBG: %s" % line)
+                continue
+            if sline.startswith("FATAL "):
+                print(sline, file=sys.stderr)
+                if sline.find('Please login with ttnctl user login') != -1:
+                    sys.exit("Go to %s to get an access code" % register_url, file=sys.stderr)
+                raise GatewayError(sline)
+            if sline.startswith("ID "):
+                continue
+
+            match = self._LINE_RE.match(line)
+            if not match:
+                continue
+            try:
+                gateway = self._gateways[match.group('id')]
+                gateway.active()
+                gateway.frequency_plan = match.group('frequency_plan')
+                gateway.latitude = match.group('lat')
+                gateway.longitude = match.group('long')
+            except KeyError:
+                gateway = Gateway(self._options,
+                                  match.group('id'),
+                                  match.group('frequency_plan'),
+                                  match.group('lat'),
+                                  match.group('long'),
+                                  None)
+                self._gateways[gateway.id] = gateway
+                if self._loaded:
+                    gateway.notice("New gateway discovered")
+            gateway.activated = bool(match.group('activated'))
+            for delay in range(1,5):
+                notice = None
+                try:
+                    gateway.get_info()
+                    break
+                except GatewayError as err:
+                    print(err, file=sys.stderr)
+                    notice = err
+                    time.sleep(5*delay)
+                else:
+                    gateway.notice(notice)
+
+    @property
+    def ids(self):
+        ''' Return a list of gateway ids '''
+        return self._gateways.keys()
+
+    @property
+    def gateways(self):
+        ''' Return a list of gateway objects '''
+        return self._gateways.values()
+
+    @property
+    def gateway(self, id):
+        ''' Return a spefic gateway '''
+        return self._gateways[id]
+
+def send_alerts(options, destinations):
+    ''' Send e-mail about each gateway '''
+
+    for destination, gateways in destinations.items():
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = "TTN Gateway alert %s" % datetime.datetime.now(tzlocal()).strftime("%v %R %Z")
+        msg['From'] = options.fromaddr
+        msg['To'] = destination
+        if options.cc:
+            msg['Cc'] = ", ".join(options.cc)
+
+        body = []
+        body.append("Alerts:")
+        for gateway in gateways:
+            body.append("gateway %s '%s': \n\t%s" % (gateway.id, gateway.description, "\n\t".join(gateway.notices())))
+
+        msg.attach(MIMEText("\n\n".join(body), 'plain'))
+
+        s = smtplib.SMTP('localhost')
+        dest = [ 'jch@honig.net' if options.test else destination ]
+        dest.extend(options.cc)
+        s.sendmail(options.fromaddr, dest, msg.as_string())
+        s.quit()
+
+def send_gateways(options, all_gateways):
+    ''' Send e-mail about each gateway '''
+
+    destinations = {}
+    for gateway in all_gateways.gateways:
+        try:
+            destinations[gateway.contact_email].append(gateway)
+        except KeyError:
+            destinations[gateway.contact_email] = [ gateway ]
+    
+    for destination, gateways in destinations.items():
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = "TTN Gateway Summary for %s" % datetime.datetime.now(tzlocal()).strftime("%v")
+        msg['From'] = options.fromaddr
+        msg['To'] = destination
+        if options.cc:
+            msg['Cc'] = ", ".join(options.cc)
+
+        body = []
+        body.append("Gateways you monitor:")
+        for gateway in gateways:
+            body.append("\t%s\n" % "\n\t".join(gateway.pretty()))
+            body.append("\t%s" % "\n\t".join(gateway.notices()))
+
+        msg.attach(MIMEText("\n\n".join(body), 'plain'))
+
+        s = smtplib.SMTP('localhost')
+        dest = [ 'jch@honig.net' if options.test else destination ]
+        dest.extend(options.cc)
+        s.sendmail(options.fromaddr, dest, msg.as_string())
+        s.quit()
+
+
+def main():
+    """ Figure out what we should do """
+
+    parser = argparse.ArgumentParser(description="Monitor TTN gateways")
+
+    #	Debugging
+    group = parser.add_argument_group("Debugging options")
+    group.add_argument("-d", "--debug",
+                       dest="debug", default=False,
+                       action='store_true',
+                       help="print debugging messages")
+    group.add_argument("--nodebug",
+                       dest="debug",
+                       action='store_false',
+                       help="print debugging messages")
+    group.add_argument("-v", "--verbose",
+                       dest="verbose", default=False,
+                       action='store_true',
+                       help="print verbose messages")
+    group.add_argument("-n", "--noop",
+                       dest="noop", default=False,
+                       action='store_true',
+                       help="Don't make changes, just list what we are going to do")
+
+    group = parser.add_argument_group("Behavior")
+    group.add_argument("--timeout",
+                       dest="timeout", type=float, default=300,
+                       help="Timeout between polls, in seconds")
+    group.add_argument("--late",
+                       dest="late", default=90,
+                       help="Interval to mark gateway as not responding")
+    group.add_argument("--from",
+                       dest="fromaddr", type=str, required=True,
+                       help="From address for notification emails")
+    group.add_argument("--cc",
+                       dest="cc", default=[],
+                       action="append",
+                       help="List of e-mail cc's")
+    group.add_argument("--test",
+                       dest="test", default=True,
+                       action="store_true",
+                       help="Don't send e-mail to victims")
+
+    #   Other options
+    group = parser.add_argument_group("Other options")
+    group.add_argument("--binary",
+                       dest="binary", default="bin/ttnctl",
+                       help="Path to binary")
+    group.add_argument("--noload",
+                       dest="load", default=True,
+                       action="store_false",
+                       help="Do not resture status from a prior run")
+    group.add_argument("--statusdb",
+                       dest="statusdb", default="./monitor-status.db",
+                       help="Name of status DB")
+
+    options = parser.parse_args()
+
+    gateways = Gateways(options)
+
+    while gateways.poll():
+        destinations = dict()
+        for gateway in gateways.gateways:
+            if gateway.was_active != gateway.is_active():
+                if gateway.is_active():
+                    gateway.notice("Gateway now active")
+                else:
+                    gateway.notice("Gateway no longer in gateway list")
+            elif gateway.is_active():
+                gateway.get_status()
+                gateway.check_status()
+
+            if gateway.notices():
+                if options.verbose:
+                    print("Need to notify %s about %s: %s" %
+                          (gateway.contact_email if gateway.contact_email else 'someone',
+                           gateway.id,
+                           gateway.description))
+                dest = gateway.contact_email if gateway.contact_email else options.fromaddr
+                try:
+                    destinations[dest].append(gateway)
+                except KeyError:
+                    destinations[dest] = [ gateway ]
+
+        send_alerts(options, destinations)
+
+        # Save current status
+        gateways.save()
+
+        last_time = datetime.datetime.now()
+        time.sleep(options.timeout)
+
+        # Send summary at midnight
+        if datetime.datetime.now().hour < last_time.hour:
+            send_gateways(options, gateways)
+
+        # Clear old notices
+        for gateway in gateways.gateways:
+            gateway.clear()
+
+if __name__ == "__main__":
+    try:
+        main()
+        sys.exit(0)
+    except KeyboardInterrupt:
+        print()
+        sys.exit(1)
+
