@@ -597,7 +597,7 @@ class Gateways(object):
 def send_alerts(options, user, destinations):
     ''' Send e-mail about each gateway '''
 
-    fromaddr = options.fromaddr if options.fromadder else user.email
+    fromaddr = options.fromaddr if options.fromaddr else user.email
 
     for destination, gateways in destinations.items():
         msg = MIMEMultipart('alternative')
