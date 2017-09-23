@@ -118,7 +118,6 @@ class Gateway(object):
         username = None
         self._collaborators = { }
 	for line in lines.split("\n"):
-
             sline = re.sub(_ANSI_RE, '', line).strip()
             if sline == "":
                 continue
@@ -514,7 +513,6 @@ class Gateways(object):
     def _list(self):
         """Return a dict of Gateways"""
 
-        rc = 0
         try:
             cmd = [ self._options.binary, "gateway", "list" ]
             if self._options.debug:
