@@ -520,6 +520,8 @@ class Gateways(object):
             if self._options.debug:
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
+        except OSError as e:
+            sys.exit("%s: %s" % (self._options.binary, e))
         except subprocess.CalledProcessError as e:
             rc = e.returncode
             raise GatewayError(e.output)
