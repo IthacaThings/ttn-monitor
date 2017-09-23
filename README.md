@@ -15,8 +15,10 @@ is an issue, or change in configuration. A summary e-mail is sent daily.
 
 # TODO
 
-+ [ ] Download ttnctl and check for updates
-+ [ ] Include log in summary e-mail
++ ttnctl
+   + [x] Automatically download
+   + [ ] Check for updates
++ [ ] Include log in daily e-mail
 + Configuration
    + [ ] Additional parameters per gateway id
    + [ ] All command line parameters
