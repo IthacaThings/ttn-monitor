@@ -704,6 +704,8 @@ def main():
                        help="Name of status DB")
 
     options = parser.parse_args()
+    if options.debug:
+        options.verbose = options.debug
 
     # Try to find ttnctl binary
     if not options.binary:
