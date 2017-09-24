@@ -656,7 +656,11 @@ def send_alerts(options, user, destinations):
         s = smtplib.SMTP('localhost')
         dest = [ user.email if options.test else destination ]
         dest.extend(options.cc)
-        s.sendmail(fromaddr, dest, msg.as_string())
+        if options.debug:
+            print("SENDMAIL(%s %s %s)" % (fromaddr, ",".join(dest), msg.as_string()))
+        resp = s.sendmail(fromaddr, dest, msg.as_string())
+        if options.debug:
+            print("SENDMAIL: %s" % resp);
         s.quit()
 
 def send_gateways(options, user, all_gateways):
@@ -693,7 +697,9 @@ def send_gateways(options, user, all_gateways):
         dest.extend(options.cc)
         if options.debug:
             print("SENDMAIL(%s %s %s)" % (fromaddr, ",".join(dest), msg.as_string()))
-        s.sendmail(fromaddr, dest, msg.as_string())
+        resp = s.sendmail(fromaddr, dest, msg.as_string())
+        if options.debug:
+            print("SENDMAIL: %s" % resp);
         s.quit()
 
 class User(object):
