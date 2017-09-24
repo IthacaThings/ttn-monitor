@@ -55,6 +55,28 @@ _ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
 # Extract key and value
 _INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
 
+class Notice(object):
+    """ Hold a notice """
+
+    def __init__(self, message):
+        """ Record a notice """
+
+        self._message = message
+        self._timestamp = datetime.datetime.now()
+
+    def __str__(self):
+        """ Return message """
+        return self._message
+
+    def long(self):
+        """ Return timestamp and message """
+        return "%s %s" % (self._timestamp.strftime("%F %R %Z"), self._message)
+
+    @property
+    def timestamp(self):
+        """ Return timestamp """
+        return self._timestamp
+
 #
 #	Gateway list
 #
@@ -82,6 +104,7 @@ class Gateway(object):
         self._offset = datetime.timedelta(0)
         self._late = datetime.timedelta(0)
         self._notices = [ ]
+        self._log = [ ] 
         self._status_error = { 'current': None,
                                'last': None }
 
@@ -277,13 +300,24 @@ class Gateway(object):
 
     def notice(self, msg):
         ''' Add a notice '''
+
+        if not msg:
+            return
+
+        notice = Notice(msg)
         if self._options.debug:
-            print("NOTICE: %s" % msg)
-        self._notices.append(msg)
+            print("NOTICE: %s" % notice)
+        self._notices.append(notice)
+        self._log.append(notice)
 
     def notices(self):
         ''' Read notices '''
         return self._notices
+
+    @property
+    def log(self):
+        ''' Read log '''
+        return self._log
 
     def clear(self):
         ''' Clear notices '''
@@ -613,7 +647,9 @@ def send_alerts(options, user, destinations):
         body = []
         body.append("Alerts:")
         for gateway in gateways:
-            body.append("gateway %s '%s': \n\t%s" % (gateway.id, gateway.description, "\n\t".join(gateway.notices())))
+            body.append("gateway %s '%s': \n\t%s" % (gateway.id,
+                                                     gateway.description,
+                                                     "\n\t".join(map(lambda x: str(x), gateway.notices()))))
 
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
@@ -623,20 +659,23 @@ def send_alerts(options, user, destinations):
         s.sendmail(fromaddr, dest, msg.as_string())
         s.quit()
 
-def send_gateways(options, all_gateways):
+def send_gateways(options, user, all_gateways):
     ''' Send e-mail about each gateway '''
+
+    fromaddr = options.fromaddr if options.fromaddr else user.email
 
     destinations = {}
     for gateway in all_gateways.gateways:
+        dest = gateway.contact_email if gateway.contact_email else fromaddr
         try:
-            destinations[gateway.contact_email].append(gateway)
+            destinations[dest].append(gateway)
         except KeyError:
-            destinations[gateway.contact_email] = [ gateway ]
+            destinations[dest] = [ gateway ]
     
     for destination, gateways in destinations.items():
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = "TTN Gateway Summary for %s" % datetime.datetime.now(tzlocal()).strftime("%v")
-        msg['From'] = options.fromaddr
+        msg['Subject'] = "TTN Gateway Summary for %s" % datetime.datetime.now(tzlocal()).strftime("%F")
+        msg['From'] = fromaddr
         msg['To'] = destination
         if options.cc:
             msg['Cc'] = ", ".join(options.cc)
@@ -644,15 +683,15 @@ def send_gateways(options, all_gateways):
         body = []
         body.append("Gateways you monitor:")
         for gateway in gateways:
-            body.append("\t%s\n" % "\n\t".join(gateway.pretty()))
-            body.append("\t%s" % "\n\t".join(gateway.notices()))
+            body.append("%s\n" % "\n\t".join(gateway.pretty()))
+            body.append("\t\t%s" % "\n\t\t".join(map(lambda x: x.long(), gateway.log)))
 
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
         s = smtplib.SMTP('localhost')
         dest = [ 'jch@honig.net' if options.test else destination ]
         dest.extend(options.cc)
-        s.sendmail(options.fromaddr, dest, msg.as_string())
+        s.sendmail(fromaddr, dest, msg.as_string())
         s.quit()
 
 class User(object):
@@ -789,9 +828,7 @@ def main():
     # Get user info
     user = User(options)
 
-    if not options.fromaddr:
-        options.fromaddr = user.email
-
+    # Get the list of gateways
     gateways = Gateways(options)
 
     while gateways.poll():
@@ -827,8 +864,8 @@ def main():
         time.sleep(options.timeout)
 
         # Send summary at midnight
-        if datetime.datetime.now().hour < last_time.hour:
-            send_gateways(options, gateways)
+        if options.test or datetime.datetime.now().hour < last_time.hour:
+            send_gateways(options, user, gateways)
 
         # Clear old notices
         for gateway in gateways.gateways:
