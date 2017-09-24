@@ -27,7 +27,7 @@ is an issue, or change in configuration. A summary e-mail is sent daily.
    + [x] Get default e-mail from user status
    + [x] Automatically download
    + [ ] Check for updates
-+ [ ] Include log in daily e-mail
++ [x] Include log in daily e-mail
 + Configuration
    + [ ] Additional parameters per gateway id
    + [ ] All command line parameters
