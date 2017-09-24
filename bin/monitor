@@ -804,7 +804,7 @@ def main():
                        action="append",
                        help="List of e-mail cc's")
     group.add_argument("--test",
-                       dest="test", default=True,
+                       dest="test", default=False,
                        action="store_true",
                        help="Don't send e-mail to victims")
 
