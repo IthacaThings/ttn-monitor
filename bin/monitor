@@ -864,7 +864,7 @@ def main():
         time.sleep(options.timeout)
 
         # Send summary at midnight
-        if options.test or datetime.datetime.now().hour < last_time.hour:
+        if datetime.datetime.now().hour < last_time.hour:
             send_gateways(options, user, gateways)
 
         # Clear old notices
