@@ -691,6 +691,8 @@ def send_gateways(options, user, all_gateways):
         s = smtplib.SMTP('localhost')
         dest = [ 'jch@honig.net' if options.test else destination ]
         dest.extend(options.cc)
+        if options.debug:
+            print("SENDMAIL(%s %s %s)" % (fromaddr, ",".join(dest), msg.as_string()))
         s.sendmail(fromaddr, dest, msg.as_string())
         s.quit()
 
