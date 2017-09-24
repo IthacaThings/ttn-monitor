@@ -242,7 +242,7 @@ class Gateway(object):
                     self.notice("No response from gateway in %s" % late)
             elif late.total_seconds() <= self._options.late:
                 if self._late.total_seconds() >= self._options.late:
-                    self.notice("Gateway has responded in the last minute")
+                    self.notice("Gateway is now responding")
             self._late = late
 
         for key in [ 'Description.info',
