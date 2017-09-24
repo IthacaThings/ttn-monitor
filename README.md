@@ -24,7 +24,7 @@ sudo apt-get install git python-dateutil unzip
 ## Clone the repo
 
 ```
-wget https://github.com/IthacaThings/ttn-monitor.git
+git clone https://github.com/IthacaThings/ttn-monitor.git
 ```
 
 ## Enter the new directory
