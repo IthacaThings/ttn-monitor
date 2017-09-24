@@ -4,8 +4,8 @@
 # Monitoring of The Things Network Gateways
 
 This script monitors TTN gateways, and sends e-mails when a problem is
-detected. It also sends a daily summary of all TTN gateways for which
-you are listed as an owner.
+detected, or gateway parameters change. It also sends a daily summary
+of all TTN gateways for which you are listed as an owner.
 
 # Table of Contents
 1. [Initial Setup](#initial-setup)
@@ -57,11 +57,18 @@ output of what is happening.
 ## For each gateway you want to monitor
 
 Have the owner add you as a collaborator with at least
-`gateway:status` privs:
+`gateway:status` privs. To do this with the `ttnctl` command do the following:
 
 ```
 bin/ttnctl gateway collaborators GWID USERNAME gateway:status gateway:location
 ```
+
+note that `gateway:location` rights is optional.
+
+From the GUI you can edit gateway settings and add collaborators
+there. It does not seem to be possible to add just `gateway:status`
+rights via the GUI; any collborators assigned via the GUI appear to
+have `gateway:settings` rights.
 
 # TODO
 
