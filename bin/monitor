@@ -46,9 +46,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+
+# Link for getting a token
 register_url = "https://account.thethingsnetwork.org/users/authorize?client_id=ttnctl&redirect_uri=/oauth/callback/ttnctl&response_type=code"
 
+# Remove ANSI terminal sequences
 _ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
+# Extract key and value
+_INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
 
 #
 #	Gateway list
@@ -59,8 +64,6 @@ class GatewayError(Exception):
 
 class Gateway(object):
     """Class to hold Gateway info"""
-
-    info_re = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
 
     # 2017-08-17 18:05:16.935947527 -0400 EDT
     _TIME_RE = re.compile(r'(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s+(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<seconds>\d{2})(\.\d+)?\s+(?P<offhour>[+-]\d{2})(?P<offmin>\d{2})\s+(?P<tzname>[A-Z]+)')
@@ -76,7 +79,6 @@ class Gateway(object):
         self._active = True
         self._was_active = True
         self._info = {}
-        self._notices = {}
         self._offset = datetime.timedelta(0)
         self._late = datetime.timedelta(0)
         self._notices = [ ]
@@ -141,7 +143,7 @@ class Gateway(object):
                 username = sline.split(': ')[1].strip()
                 continue
 
-            match = self.info_re.match(line)
+            match = _INFO_RE.match(line)
             if not match:
                 continue
 
@@ -656,8 +658,6 @@ def send_gateways(options, all_gateways):
 class User(object):
     """ Get info about user """
 
-    INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
-
     def __init__(self, options):
         """ Get user info """
 
@@ -689,7 +689,7 @@ class User(object):
                     sys.exit("Go to %s to get an access code" % register_url)
                 sys.exit(sline)
 
-            match = self.INFO_RE.match(line)
+            match = _INFO_RE.match(line)
             if not match:
                 continue
 
