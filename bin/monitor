@@ -4,24 +4,23 @@ from __future__ import print_function
 import argparse
 import copy
 import datetime
-import dateutil
 import os
+import pprint
 import re
 import smtplib
 import subprocess
 import sys
 import time
 
-from dateutil.tz import tzlocal, tzoffset
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-from pprint import pprint, pformat
-
 try:
     import cPickle as pickle
 except ImportError:
     import pickle
+
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+from dateutil.tz import tzlocal, tzoffset
 
 """
 MIT License
