@@ -81,6 +81,7 @@ class Notice(object):
 #
 
 class GatewayError(Exception):
+    ''' For gateway exceptions '''
     pass
 
 class Gateway(object):
@@ -89,60 +90,74 @@ class Gateway(object):
     # 2017-08-17 18:05:16.935947527 -0400 EDT
     _TIME_RE = re.compile(r'(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s+(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<seconds>\d{2})(\.\d+)?\s+(?P<offhour>[+-]\d{2})(?P<offmin>\d{2})\s+(?P<tzname>[A-Z]+)')
 
-    def __init__(self, options, id, frequency_plan, latitude, longitude, router):
+    def __init__(self, options, gw_id, frequency_plan, latitude, longitude, router):
         """"""
         self._options = options
-        self._id = id
-        self._frequency_plan = frequency_plan
-        self._latitude = float(latitude)
-        self._longitude = float(longitude)
-        self._router = router
+        self._activated = False
         self._active = True
-        self._was_active = True
+        self._collaborators = {}
+        self._frequency_plan = frequency_plan
+        self._gw_id = gw_id
         self._info = {}
-        self._offset = datetime.timedelta(0)
+        self._info_old = {}
         self._late = datetime.timedelta(0)
-        self._notices = [ ]
-        self._log = [ ] 
-        self._status_error = { 'current': None,
-                               'last': None }
+        self._latitude = float(latitude)
+        self._log = []
+        self._longitude = float(longitude)
+        self._notices = []
+        self._offset = datetime.timedelta(0)
+        self._router = router
+        self._status_error = {'current': None,
+                              'last': None}
+        self._status_time = None
+        self._was_active = True
 
-    def sign(self, x):
-        """ Return sign of x """
+    @staticmethod
+    def sign(var):
+        """ Return sign of var """
 
-        if x > 0:
+        if var > 0:
             return 1
-        elif x < 0:
+        elif var < 0:
             return -1
         else:
             return 0
-        
+
     def __repr__(self):
-        return "%s: %s %s %f, %f %s" % (self._id, self._activated, self._frequency_plan, self._latitude, self._longitude, self._router)
+        return "%s: %s %s %f, %f %s" % (self._gw_id,
+                                        self._activated,
+                                        self._frequency_plan,
+                                        self._latitude,
+                                        self._longitude,
+                                        self._router)
 
     def __str__(self):
-        return "%s: %s %s %f, %f %s" % (self._id, self._activated, self._frequency_plan, self._latitude, self._longitude, self._router)
+        return "%s: %s %s %f, %f %s" % (self._gw_id,
+                                        self._activated,
+                                        self._frequency_plan,
+                                        self._latitude,
+                                        self._longitude,
+                                        self._router)
 
     def _get_response(self, *args):
-    	""" Issue a command and get the response """
+        """ Issue a command and get the response """
 
-	cmd = [ self._options.binary ]
-	cmd.extend(args)
+        cmd = [self._options.binary]
+        cmd.extend(args)
 
-	try:
+        try:
             if self._options.debug:
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
-        except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError as err:
             if self._options.verbose:
-                print("ERR: %s returns %d" % (" ".join(cmd), e.returncode), file=sys.stderr)
-            lines = e.output
+                print("ERR: %s returns %d" % (" ".join(cmd), err.returncode), file=sys.stderr)
+            lines = err.output
 
-        response = ""
         collaborators = False
         username = None
-        self._collaborators = { }
-	for line in lines.split("\n"):
+        self._collaborators = {}
+        for line in lines.split("\n"):
             sline = re.sub(_ANSI_RE, '', line).strip()
             if sline == "":
                 continue
@@ -176,7 +191,7 @@ class Gateway(object):
 
             key = match.group('key')
             value = match.group('value')
-            if key in [ "Description", "Location" ]:
+            if key in ["Description", "Location"]:
                 key += '.' + args[1]
             self._info[key] = value
 
@@ -192,10 +207,10 @@ class Gateway(object):
 
         try:
             self._info_old = copy.copy(self._info)
-            self._get_response("gateway", "info", self._id)
-        except GatewayError as e:
-            print(e)
-            
+            self._get_response("gateway", "info", self._gw_id)
+        except GatewayError as err:
+            print(err)
+
     def get_status(self):
         """ Get additional info via 'info' subcommand """
 
@@ -203,13 +218,13 @@ class Gateway(object):
             print("GET STATUS: %s" % self)
 
         try:
-            self._get_response("gateway", "status", self._id)
+            self._get_response("gateway", "status", self._gw_id)
             self._status_error['current'] = None
-        except GatewayError as e:
+        except GatewayError as err:
             self._info['Last seen'] = None
             self._info['Reported time'] = None
-            self._status_error['current'] = e.message
-        self.status_time = datetime.datetime.now(tzlocal())
+            self._status_error['current'] = err.message
+        self._status_time = datetime.datetime.now(tzlocal())
 
     def check_status(self):
         ''' Check the status results '''
@@ -244,51 +259,51 @@ class Gateway(object):
                     self.notice("Gateway is now responding")
             self._late = late
 
-        for key in [ 'Description.info',
-                     'Owner',
-                     'Frequency Plan',
-                     'Location.info',
-                     'Location.status',
-                     'Placement',
-                     'Platform',
-                     'Router',
-                     'Bridge',
-                     'IP Address',
-                     'Brand',
-                     'Model' ]:
+        for key in ['Description.info',
+                    'Owner',
+                    'Frequency Plan',
+                    'Location.info',
+                    'Location.status',
+                    'Placement',
+                    'Platform',
+                    'Router',
+                    'Bridge',
+                    'IP Address',
+                    'Brand',
+                    'Model']:
             try:
                 if self._info_old[key] != self._info[key]:
-                    self.notice('"%s" changed "%s" -> "%s"' % (key, self._info_old[key], self._info[key]))
+                    self.notice('"%s" changed "%s" -> "%s"' % (key,
+                                                               self._info_old[key],
+                                                               self._info[key]))
             except KeyError:
                 pass
-                
-        
+
     def pretty(self):
         ''' Pretty print a bunch of gateway info '''
 
         lines = []
-        for key in [ 'Gateway ID',
-                     'Description.info',
-                     'Owner',
-                     'Frequency Plan',
-                     'Location.info',
-                     'Location.status',
-                     'Placement',
-                     'Platform',
-                     'Router',
-                     'Bridge',
-                     'IP Address',
-                     'Rtt',
-                     'Rx',
-                     'Tx' ]:
+        for key in ['Gateway ID',
+                    'Description.info',
+                    'Owner',
+                    'Frequency Plan',
+                    'Location.info',
+                    'Location.status',
+                    'Placement',
+                    'Platform',
+                    'Router',
+                    'Bridge',
+                    'IP Address',
+                    'Rtt',
+                    'Rx',
+                    'Tx']:
             try:
                 lines.append("\t%s:\t%s" % (key, self._info[key]))
             except KeyError:
                 pass
 
         return lines
-        
-        
+
     def is_active(self):
         ''' Are we active '''
         return self._active
@@ -333,6 +348,11 @@ class Gateway(object):
         self._active = False
 
     @property
+    def status_time(self):
+        ''' Return status_time '''
+        return self._status_time
+
+    @property
     def status_error_current(self):
         ''' Return status_error string '''
         return self._status_error['current']
@@ -368,9 +388,9 @@ class Gateway(object):
         self._late = late
 
     @property
-    def id(self):
+    def gw_id(self):
         ''' Get name '''
-        return self._id
+        return self._gw_id
 
     @property
     def activated(self):
@@ -415,7 +435,7 @@ class Gateway(object):
     def _time(self, timestr):
         ''' Convert to a tm '''
 
-        if timestr == None:
+        if timestr is None:
             return timestr
 
         match = self._TIME_RE.match(timestr)
@@ -446,7 +466,7 @@ class Gateway(object):
             return self._time(self._info['Last seen'])
         except KeyError:
             return None
-        
+
     @property
     def reported_time(self):
         ''' Get Reported time from info '''
@@ -454,7 +474,7 @@ class Gateway(object):
             return self._time(self._info['Reported time'])
         except KeyError:
             return None
-        
+
     @property
     def description(self):
         ''' Get Description from info '''
@@ -475,9 +495,9 @@ class Gateway(object):
 class Gateways(object):
     ''' Hold and dump/restore a list of Gateways '''
 
-    #        ID              Activated       Frequency Plan  Coordinates                        
-    #1       ttn-ith-test    false           AU_915_928      (42.517288, -76.710183, %!f(int=0))    
-    _LINE_RE = re.compile("^\d+\s+(?P<id>[a-z0-9-]+)\s+(?P<activated>true|false)\s+(?P<frequency_plan>(AU|EU|IN|KR|US|AS)_\d{3}_\d{3})\s+\((?P<lat>-?\d+\.\d+),\s+(?P<long>-?\d+.\d+),.*$")
+    #        ID              Activated       Frequency Plan  Coordinates
+    #1       ttn-ith-test    false           AU_915_928      (42.517288, -76.710183, %!f(int=0))
+    _LINE_RE = re.compile(r"^\d+\s+(?P<id>[a-z0-9-]+)\s+(?P<activated>true|false)\s+(?P<frequency_plan>(AU|EU|IN|KR|US|AS)_\d{3}_\d{3})\s+\((?P<lat>-?\d+\.\d+),\s+(?P<long>-?\d+.\d+),.*$")
 
     def __init__(self, options):
         self._options = options
@@ -495,7 +515,8 @@ class Gateways(object):
         self._gateways = pickle.load(filep)
         self._loaded = True
         if self._options.verbose:
-            print("Loaded prior status about %d gateways from %s" % (len(self._gateways), self._options.statusdb))
+            print("Loaded prior status about %d gateways from %s" % (len(self._gateways),
+                                                                     self._options.statusdb))
         filep.close()
 
     def save(self):
@@ -529,13 +550,13 @@ class Gateways(object):
         if self._options.verbose:
             print("Polling gateways")
 
-        for delay in range(1,5):
+        for delay in range(1, 5):
             try:
                 self._list()
                 break
             except GatewayError as err:
                 print(err, file=sys.stderr)
-                time.sleep(time*30)
+                time.sleep(delay*30)
             else:
                 # XXX - What to do here?
                 pass
@@ -543,7 +564,7 @@ class Gateways(object):
         if self._options.verbose:
             print("Found %d gateways:" % len(self._gateways))
             for gateway in self._gateways.values():
-                print("\t%s - %s" % (gateway.id, gateway.description))
+                print("\t%s - %s" % (gateway.gw_id, gateway.description))
 
         return True
 
@@ -551,16 +572,16 @@ class Gateways(object):
         """Return a dict of Gateways"""
 
         try:
-            cmd = [ self._options.binary, "gateway", "list" ]
+            cmd = [self._options.binary, "gateway", "list"]
             if self._options.debug:
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
-        except OSError as e:
-            sys.exit("%s: %s" % (self._options.binary, e))
-        except subprocess.CalledProcessError as e:
+        except OSError as err:
+            sys.exit("%s: %s" % (self._options.binary, err))
+        except subprocess.CalledProcessError as err:
             if self._options.verbose:
-                print("ERR: %s returns %d" % (" ".join(cmd), e.returncode), file=sys.stderr)
-            raise GatewayError(e.output)
+                print("ERR: %s returns %d" % (" ".join(cmd), err.returncode), file=sys.stderr)
+            raise GatewayError(err.output)
 
         for gateway in self._gateways.values():
             gateway.save_active()
@@ -598,11 +619,11 @@ class Gateways(object):
                                   match.group('lat'),
                                   match.group('long'),
                                   None)
-                self._gateways[gateway.id] = gateway
+                self._gateways[gateway.gw_id] = gateway
                 if self._loaded:
                     gateway.notice("New gateway discovered")
             gateway.activated = bool(match.group('activated'))
-            for delay in range(1,5):
+            for delay in range(1, 5):
                 notice = None
                 try:
                     gateway.get_info()
@@ -615,7 +636,7 @@ class Gateways(object):
                     gateway.notice(notice)
 
     @property
-    def ids(self):
+    def gw_ids(self):
         ''' Return a list of gateway ids '''
         return self._gateways.keys()
 
@@ -625,9 +646,9 @@ class Gateways(object):
         return self._gateways.values()
 
     @property
-    def gateway(self, id):
+    def gateway(self, gw_id):
         ''' Return a spefic gateway '''
-        return self._gateways[id]
+        return self._gateways[gw_id]
 
 def send_alerts(options, user, destinations):
     ''' Send e-mail about each gateway '''
@@ -636,7 +657,8 @@ def send_alerts(options, user, destinations):
 
     for destination, gateways in destinations.items():
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = "TTN Gateway alert %s" % datetime.datetime.now(tzlocal()).strftime("%F %R %Z")
+        msg['Subject'] = "TTN Gateway alert %s" % \
+                         datetime.datetime.now(tzlocal()).strftime("%F %R %Z")
         msg['From'] = fromaddr
         msg['To'] = destination
         # XXX - Include user on cc list?
@@ -646,21 +668,21 @@ def send_alerts(options, user, destinations):
         body = []
         body.append("Alerts:")
         for gateway in gateways:
-            body.append("gateway %s '%s': \n\t%s" % (gateway.id,
+            body.append("gateway %s '%s': \n\t%s" % (gateway.gw_id,
                                                      gateway.description,
-                                                     "\n\t".join(map(lambda x: str(x), gateway.notices()))))
+                                                     "\n\t".join(str(x) for x in gateway.notices())))
 
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
-        s = smtplib.SMTP('localhost')
-        dest = [ user.email if options.test else destination ]
+        smtp = smtplib.SMTP('localhost')
+        dest = [user.email if options.test else destination]
         dest.extend(options.cc)
         if options.debug:
             print("SENDMAIL(%s -> %s)" % (fromaddr, ",".join(dest)))
-        resp = s.sendmail(fromaddr, dest, msg.as_string())
+        resp = smtp.sendmail(fromaddr, dest, msg.as_string())
         if options.debug:
-            print("SENDMAIL: %s" % resp);
-        s.quit()
+            print("SENDMAIL: %s" % resp)
+        smtp.quit()
 
 def send_gateways(options, user, all_gateways):
     ''' Send e-mail about each gateway '''
@@ -673,11 +695,12 @@ def send_gateways(options, user, all_gateways):
         try:
             destinations[dest].append(gateway)
         except KeyError:
-            destinations[dest] = [ gateway ]
-    
+            destinations[dest] = [gateway]
+
     for destination, gateways in destinations.items():
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = "TTN Gateway Summary for %s" % datetime.datetime.now(tzlocal()).strftime("%F")
+        msg['Subject'] = "TTN Gateway Summary for %s" % \
+                         datetime.datetime.now(tzlocal()).strftime("%F")
         msg['From'] = fromaddr
         msg['To'] = destination
         if options.cc:
@@ -687,19 +710,19 @@ def send_gateways(options, user, all_gateways):
         body.append("Gateways you monitor:")
         for gateway in gateways:
             body.append("%s\n" % "\n\t".join(gateway.pretty()))
-            body.append("\t\t%s" % "\n\t\t".join(map(lambda x: x.long(), gateway.log)))
+            body.append("\t\t%s" % "\n\t\t".join(x.long() for x in gateway.log))
 
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
-        s = smtplib.SMTP('localhost')
-        dest = [ 'jch@honig.net' if options.test else destination ]
+        smtp = smtplib.SMTP('localhost')
+        dest = ['jch@honig.net' if options.test else destination]
         dest.extend(options.cc)
         if options.debug:
             print("SENDMAIL(%s -> %s)" % (fromaddr, ",".join(dest)))
-        resp = s.sendmail(fromaddr, dest, msg.as_string())
+        resp = smtp.sendmail(fromaddr, dest, msg.as_string())
         if options.debug:
-            print("SENDMAIL: %s" % resp);
-        s.quit()
+            print("SENDMAIL: %s" % resp)
+        smtp.quit()
 
 class User(object):
     """ Get info about user """
@@ -710,14 +733,14 @@ class User(object):
         self._options = options
 
         try:
-            cmd = [ self._options.binary, "user" ]
+            cmd = [self._options.binary, "user"]
             if self._options.debug:
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
-        except OSError as e:
-            sys.exit("%s: %s" % (self._options.binary, e))
-        except subprocess.CalledProcessError as e:
-            lines = e.output
+        except OSError as err:
+            sys.exit("%s: %s" % (self._options.binary, err))
+        except subprocess.CalledProcessError as err:
+            lines = err.output
 
         for line in lines.split("\n"):
             sline = re.sub(_ANSI_RE, '', line).strip()
@@ -868,13 +891,13 @@ def main():
                 if options.verbose:
                     print("Need to notify %s about %s: %s" %
                           (gateway.contact_email if gateway.contact_email else 'someone',
-                           gateway.id,
+                           gateway.gw_id,
                            gateway.description))
                 dest = gateway.contact_email if gateway.contact_email else options.fromaddr
                 try:
                     destinations[dest].append(gateway)
                 except KeyError:
-                    destinations[dest] = [ gateway ]
+                    destinations[dest] = [gateway]
 
         send_alerts(options, user, destinations)
 
