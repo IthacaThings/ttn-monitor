@@ -764,6 +764,20 @@ class User(object):
         """ Return name """
         return self._name
 
+def get_ttnctl(options):
+    """ Download and unzip the proper ttnctl for this platform """
+
+    system = os.uname()[0].lower()
+
+    u_arch = os.uname()[4]
+    if u_arch == 'x86_64':
+        arch = 'amd64'
+    elif u_arch == 'i686':
+        arch = '386'
+    else:
+        arch = u_arch
+    return "ttnctl-%s-%s" % (system, arch)
+
 def main():
     """ Figure out what we should do """
 
@@ -824,13 +838,13 @@ def main():
     if options.debug:
         options.verbose = options.debug
 
-    # Try to find ttnctl binary
     if not options.binary:
-        for dir in [ ".", os.path.dirname(sys.argv[0]) ]:
-            path = os.path.join(dir, "ttnctl")
-            if os.access(path, os.X_OK):
-                options.binary = path
-                break
+        for binary in [get_ttnctl(options), 'ttnctl']:
+            for dirname in [".", os.path.dirname(sys.argv[0])]:
+                path = os.path.join(dirname, binary)
+                if os.access(path, os.X_OK):
+                    options.binary = path
+                    break
 
     # Get user info
     user = User(options)
