@@ -47,7 +47,7 @@ SOFTWARE.
 """
 
 # Link for getting a token
-register_url = "https://account.thethingsnetwork.org/users/authorize?client_id=ttnctl&redirect_uri=/oauth/callback/ttnctl&response_type=code"
+_REGISTER_URL = "https://account.thethingsnetwork.org/users/authorize?client_id=ttnctl&redirect_uri=/oauth/callback/ttnctl&response_type=code"
 
 # Remove ANSI terminal sequences
 _ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
@@ -820,7 +820,7 @@ class User(object):
 
             if sline.startswith("FATAL"):
                 if sline.find('Please login with ttnctl user login') != -1:
-                    raise self.UserToken("Go to %s to get an OAuth token" % register_url)
+                    raise self.UserToken("Go to %s to get an OAuth token" % _REGISTER_URL)
                 raise self.UserError(sline)
 
             match = _INFO_RE.match(line)
@@ -846,7 +846,7 @@ class User(object):
         """ Return name """
         return self._name
 
-def get_ttnctl(options):
+def get_ttnctl():
     """ Download and unzip the proper ttnctl for this platform """
 
     system = os.uname()[0].lower()
@@ -924,7 +924,7 @@ def main():
         options.verbose = options.debug
 
     if not options.binary:
-        for binary in [get_ttnctl(options), 'ttnctl']:
+        for binary in [get_ttnctl(), 'ttnctl']:
             for dirname in [".", os.path.dirname(sys.argv[0])]:
                 path = os.path.join(dirname, binary)
                 if os.access(path, os.X_OK):
