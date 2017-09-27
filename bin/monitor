@@ -54,6 +54,29 @@ _ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
 # Extract key and value
 _INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
 
+def sendmail(options, fromaddr, dest, msg):
+    ''' Do the work of sending mail '''
+
+    if options.debug:
+        print("SENDMAIL(%s -> %s)" % (fromaddr, ",".join(dest)))
+    server = smtplib.SMTP('localhost')
+    try:
+        #        server.set_debuglevel(True)
+
+        # identify ourselves, prompting server for supported features
+        server.ehlo()
+
+        # If we can encrypt this session, do it
+        if server.has_extn('STARTTLS'):
+            server.starttls()
+            server.ehlo() # re-identify ourselves over TLS connection
+
+        resp = server.sendmail(fromaddr, dest, msg.as_string())
+        if options.debug:
+            print("SENDMAIL: %s" % resp)
+    finally:
+        server.quit()
+
 class Notice(object):
     """ Hold a notice """
 
@@ -674,15 +697,9 @@ def send_alerts(options, user, destinations):
 
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
-        smtp = smtplib.SMTP('localhost')
         dest = [user.email if options.test else destination]
         dest.extend(options.cc)
-        if options.debug:
-            print("SENDMAIL(%s -> %s)" % (fromaddr, ",".join(dest)))
-        resp = smtp.sendmail(fromaddr, dest, msg.as_string())
-        if options.debug:
-            print("SENDMAIL: %s" % resp)
-        smtp.quit()
+        sendmail(options, fromaddr, dest, msg)
 
 def send_gateways(options, user, all_gateways):
     ''' Send e-mail about each gateway '''
@@ -714,18 +731,22 @@ def send_gateways(options, user, all_gateways):
 
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
-        smtp = smtplib.SMTP('localhost')
         dest = ['jch@honig.net' if options.test else destination]
         dest.extend(options.cc)
-        if options.debug:
-            print("SENDMAIL(%s -> %s)" % (fromaddr, ",".join(dest)))
-        resp = smtp.sendmail(fromaddr, dest, msg.as_string())
-        if options.debug:
-            print("SENDMAIL: %s" % resp)
-        smtp.quit()
+        sendmail(options, fromaddr, dest, msg)
 
 class User(object):
     """ Get info about user """
+
+    class UserToken(Exception):
+        ''' User exceptions '''
+        pass
+    
+    class UserError(Exception):
+        ''' User exceptions '''
+        pass
+    
+    _BRACKETS_RE = re.compile(r'{(.*)}')
 
     def __init__(self, options):
         """ Get user info """
@@ -733,14 +754,51 @@ class User(object):
         self._options = options
 
         try:
+            pairs = self._get_response("user")
+        except self.UserToken as err:
+            sys.exit(err.message)
+        except self.UserError as err:
+            sys.exit(err.message)
+
+        for key, value in pairs.items():
+            if key == 'Email':
+                self._email = value
+            elif key == 'Username':
+                self._username = value
+            elif key == 'Name':
+                match = self._BRACKETS_RE.match(value)
+                if match:
+                    value = match.group(1)
+                self._name = value
+
+    def login(self, token):
+        """ Login with token """
+
+        try:
+            self._get_response("user", "login", token)
+        except (self.UserError, self.UserToken) as err:
+            print(err.message, file=sys.stderr)
+            return False
+
+        return True
+
+    def _get_response(self, *args):
+        """ Run command and return keywords """
+
+        cmd = [self._options.binary]
+        cmd.extend(args)
+
+        try:
             cmd = [self._options.binary, "user"]
             if self._options.debug:
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
         except OSError as err:
-            sys.exit("%s: %s" % (self._options.binary, err))
+            raise self.UserError("%s: %s" % (self._options.binary, err))
         except subprocess.CalledProcessError as err:
             lines = err.output
+
+        pairs = dict()
 
         for line in lines.split("\n"):
             sline = re.sub(_ANSI_RE, '', line).strip()
