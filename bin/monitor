@@ -191,8 +191,6 @@ class Gateway(object):
             if sline.startswith("FATAL"):
                 if self._options.verbose:
                     print(sline, file=sys.stderr)
-                if sline.find('Please login with ttnctl user login') != -1:
-                    sys.exit("Go to %s to get an access code" % register_url, file=sys.stderr)
                 raise GatewayError(sline)
 
             if sline == "Collaborators:":
@@ -620,8 +618,6 @@ class Gateways(object):
             if sline.startswith("FATAL "):
                 if self._options.verbose:
                     print(sline, file=sys.stderr)
-                if sline.find('Please login with ttnctl user login') != -1:
-                    sys.exit("Go to %s to get an access code" % register_url, file=sys.stderr)
                 raise GatewayError(sline)
             if sline.startswith("ID "):
                 continue
@@ -754,11 +750,25 @@ class User(object):
         self._options = options
 
         try:
-            pairs = self._get_response("user")
+            self._user()
+            return
         except self.UserToken as err:
-            sys.exit(err.message)
+            if not options.token:
+                sys.exit(err.message)
         except self.UserError as err:
             sys.exit(err.message)
+
+        try:
+            if not self._login(options.token):
+                sys.exit(1)
+            self._user()
+        except (self.UserError, self.UserToken) as err:
+            sys.exit(err.message)
+
+    def _user(self):
+        """ Get user info """
+
+        pairs = self._get_response("user")
 
         for key, value in pairs.items():
             if key == 'Email':
@@ -771,7 +781,7 @@ class User(object):
                     value = match.group(1)
                 self._name = value
 
-    def login(self, token):
+    def _login(self, token):
         """ Login with token """
 
         try:
@@ -789,7 +799,6 @@ class User(object):
         cmd.extend(args)
 
         try:
-            cmd = [self._options.binary, "user"]
             if self._options.debug:
                 print("DBG: %s" % " ".join(cmd))
             lines = subprocess.check_output(cmd)
@@ -810,25 +819,17 @@ class User(object):
                 continue
 
             if sline.startswith("FATAL"):
-                if self._options.verbose:
-                    print(sline, file=sys.stderr)
                 if sline.find('Please login with ttnctl user login') != -1:
-                    sys.exit("Go to %s to get an access code" % register_url)
-                sys.exit(sline)
+                    raise self.UserToken("Go to %s to get an OAuth token" % register_url)
+                raise self.UserError(sline)
 
             match = _INFO_RE.match(line)
             if not match:
                 continue
 
-            key = match.group('key')
-            value = match.group('value')
-            if key == 'Email':
-                self._email = value
-            elif key == 'Username':
-                self._username = value
-            elif key == 'Name':
-                # XXX - Strip {}
-                self._name = value
+            pairs[match.group('key')] = match.group('value')
+
+        return pairs
 
     @property
     def email(self):
@@ -904,6 +905,9 @@ def main():
 
     #   Other options
     group = parser.add_argument_group("Other options")
+    group.add_argument("--token",
+                       dest="token",
+                       help="OAuth token")
     group.add_argument("--binary",
                        dest="binary",
                        help="Path to binary")
