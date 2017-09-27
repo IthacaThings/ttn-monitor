@@ -737,11 +737,11 @@ class User(object):
     class UserToken(Exception):
         ''' User exceptions '''
         pass
-    
+
     class UserError(Exception):
         ''' User exceptions '''
         pass
-    
+
     _BRACKETS_RE = re.compile(r'{(.*)}')
 
     def __init__(self, options):
