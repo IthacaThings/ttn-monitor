@@ -313,7 +313,11 @@ class Gateway(object):
         if self._options.debug:
             print("NOTICE: %s" % notice)
         self._notices.append(notice)
-        self._log.append(notice)
+        # Not sure why this is required, but I was getting AttributeError about self._log
+        try:
+            self._log.append(notice)
+        except AttributeError:
+            self._log = [ notice ]
 
     def notices(self):
         ''' Read notices '''
@@ -322,7 +326,10 @@ class Gateway(object):
     @property
     def log(self):
         ''' Read log '''
-        return self._log
+        try:
+            return self._log
+        except:
+            return [ ]
 
     def clear(self):
         ''' Clear notices '''
