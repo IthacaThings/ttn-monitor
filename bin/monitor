@@ -802,7 +802,7 @@ def main():
                        dest="late", default=90,
                        help="Interval to mark gateway as not responding")
     group.add_argument("--from",
-                       dest="fromaddr",
+                       dest="fromaddr", required=True,
                        help="From address for notification emails")
     group.add_argument("--cc",
                        dest="cc", default=[],
