@@ -204,7 +204,12 @@ class Gateway(object):
             print("GET STATUS: %s" % self)
 
         try:
-            self._get_response("gateway", "status", self._id)
+            cmd = [ "gateway", "status", self._id ]
+            try:
+                cmd.extend(["--router-id", self._info['Router']])
+            except KeyError:
+                pass
+            self._get_response(*cmd)
             self._status_error['current'] = None
         except GatewayError as e:
             self._info['Last seen'] = None
