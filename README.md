@@ -83,6 +83,7 @@ Enhancements planned
 + Configuration
    + [ ] Additional parameters per gateway id
    + [ ] All command line parameters
+   + [ ] Override e-mail, add CC
 + [ ] Pushbullet support
 + [ ] Slack postings
 + [ ] Web page
