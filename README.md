@@ -70,6 +70,73 @@ there. It does not seem to be possible to add just `gateway:status`
 rights via the GUI; any collborators assigned via the GUI appear to
 have `gateway:settings` rights.
 
+# CONFIG FILE
+
+A configuration file can be used to specify defaults for command line
+options, group gateways togather and specify per-gateway information.
+
+By default *ttn-monitor* tries to open *.ttn-monitor.yaml* in the current directory.
+If that does not exist it tries to open *~/.ttn-monitor.yaml*. The
+*--config* option on the command line can be used to explicity specify
+a config file from the command line.
+
+The config file is in [YAML](http://www.yaml.org/start.html) format.
+
+Global parameters:
+	+ from: string: Specify the sending e-mail address
+	+ test: boolean: Specify test mode
+	+ late: float: seconds XXX
+	+ timeout: float: secons XXX
+	+ cc: string or list: Specify additional cc's
+
+Group defaults:
+	+ cc: string or list: Specify additional cc's
+
+Gateway parameters:
+	+ alias: A string specifying a short name for the gateway
+	+ cc: string or list: Specify additional cc's
+
+Example:
+
+```
+---
+Global:
+  from: jch@honig.net
+  cc: 
+	- jch@honig.net
+	- tmm@mcci.com
+  test: true
+
+ttn-ithaca:
+  defaults:
+    cc: gateway-mgmt@ttni.tech
+  eui-008000000000bf84:
+    alias: ttn-ith-bosak
+  cce-tompkins:
+    alias: ttn-ith-cce
+  eui-008000000000bf4f:
+    alias: ttn-ith-mcci
+  eui-00800000a0000750:
+    alias: ttn-ith-ecovillage
+  eui-00800000a0000d4f:
+    alias: ttn-ith-test
+      
+ttn-nyc:
+  defaults:
+    cc: demo@thethings.nyc
+  eui-008000000000a4f1:
+    alias: ttn-nyc-mcci
+  eui-00800000a0000d50:
+    alias: ttn-nyc-ccny
+  eui-00800000a0000d51:
+    alias: ttn-nyc-ffiller
+  eui-00800000a0000ede:
+    alias: ttn-nyc-midtown
+  eui-00800000a00014ff:
+    alias: ttn-nyc-chelsea
+```
+
+
 # TODO
 
 Enhancements planned
@@ -79,11 +146,6 @@ Enhancements planned
    + [x] Get default e-mail from user status
    + [x] Automatically download
    + [ ] Check for updates
-+ [x] Include log in daily e-mail
-+ Configuration
-   + [ ] Additional parameters per gateway id
-   + [ ] All command line parameters
-   + [ ] Override e-mail, add CC
 + [ ] Pushbullet support
 + [ ] Slack postings
 + [ ] Web page

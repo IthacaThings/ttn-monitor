@@ -17,6 +17,12 @@ try:
 except ImportError:
     import pickle
 
+try:
+    import yaml
+except ImportError:
+    print("Please install PyYaml", file=sys.stderr)
+    sys.exit(1)
+
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -77,6 +83,152 @@ def sendmail(options, fromaddr, dest, msg):
     finally:
         server.quit()
 
+class Config(object):
+    """ Config file parsing """
+
+    class ParseError(Exception):
+        """ Handle a Parse Error """
+        pass
+
+    def __init__(self, options):
+        self._options = options
+        self._defaults = dict()
+        self._groups = dict()
+        self._gateways = dict()
+        self._gateway_group = dict()
+
+        # To deal with adding help option with multi-stage
+        if self._options.help:
+            return
+
+        # Read the config file
+        if self._options.config:
+            config_files = [ options.config ]
+        else:
+            config_files = ['./.ttn-monitor.yaml', '~/.ttn-monitor.yaml']
+        for config_file in config_files:
+            try:
+                if self._options.debug:
+                    print("Reading %s" % config_file)
+                self._config_load(os.path.expanduser(config_file))
+            except IOError as error:
+                if self._options.debug or self._options.config:
+                    print(error)
+                continue
+            if self._options.debug:
+                print("Parsing %s" % config_file)
+            self._config_top()
+            break
+
+    def _config_load(self, filename):
+        """ Read config data as yaml """
+
+        # Open the file
+        config_file = open(filename)
+
+        # Parse it
+        try:
+            self._config_data = yaml.load(config_file)
+        except yaml.scanner.ScannerError as err:
+            raise self.ParseError("YAML Parse error on %s: %s" % (filename, err))
+
+        # Close it
+        config_file.close()
+
+    def _validate(self, config, allowed=[]):
+        """ Generic validation """
+
+        for key, value in config.items():
+            if key not in allowed:
+                raise self.ParseError("invalid Global key: %s" % (key))
+            if key == 'cc':
+                if isinstance(value, str):
+                    config['cc'] = [ value ]
+                elif isinstance(value, list):
+                    for val in value:
+                        if not isinstance(val, str):
+                            raise self.ParseError("%s is not a string" % val)
+                else:
+                    raise self.ParseError("%s is not a list or string" % value)
+            elif key == 'from':
+                if not isinstance(value, str):
+                    raise self.ParseError("%s is not a string" % val)
+            elif key == 'late':
+                if not isinstance(value, (int, float)):
+                    raise self.ParseError("%s is not a number" % value)
+            elif key == 'timeout':
+                if not isinstance(value, (int, float)):
+                    raise self.ParseError("%s is not a number" % value)
+            elif key == 'test':
+                if not isinstance(value, bool):
+                    raise self.ParseError("%s is not a boolean" % value)
+            elif key == 'alias':
+                if not isinstance(value, str):
+                    raise self.ParseError("%s is not a string" % value)
+            else:
+                raise self.ParserError("Internal error parsing %s" % value)
+
+    def _config_top(self):
+        """ Parse the top level config items """
+
+        if self._options.debug:
+            print("Config: %s" % pprint.pformat(self._config_data))
+
+        for group, config in self._config_data.items():
+            if group.lower() == "global":
+                self._validate(config, [ 'cc', 'from', 'late', 'timeout', 'test' ])
+                self._defaults = config
+                if self._options.debug:
+                    print("Config: defaults %s" % pprint.pformat(self._defaults))
+                continue
+
+            for gateway, value in config.items():
+                if gateway.lower() == "defaults":
+                    self._validate(value, [ 'cc' ])
+                    self._groups[group] = value
+                    if self._options.debug:
+                        print("Config: %s: %s" % (group, value))
+                else:
+                    if not isinstance(gateway, str):
+                        self.ParserError("Gateway ID is not a string: %s" % gateway)
+                    self._validate(value, [ 'cc', 'alias' ])
+                    self._gateway_group[gateway] = group
+                    self._gateways[gateway] = value
+                    if self._options.debug:
+                        print("Config: %s: %s" % (gateway, pprint.pformat(value)))
+
+    def __str__(self):
+        """ Show what we have """
+
+        # XXX - Global
+        # XXX - Groups
+        # XXX - Gateways
+
+
+    def gateway(self, gw_id):
+        ''' Return defaults for a gateway '''
+
+        defaults = dict()
+        try:
+            group = self._gateway_group[gw_id]
+            defaults = copy.copy(self._groups[group])
+            for key, value in self._gateways[gw_id].items():
+                if key == 'cc':
+                    if defaults.has_key('cc'):
+                        defaults[key].extend(value)
+                defaults[key] = value
+        except KeyError:
+            pass
+
+        return defaults
+
+    def default(self, value, default=None):
+        ''' Return a default value '''
+
+        if self._options.debug:
+            print("Config.default(%s, %s): %s" % (value, default, self._defaults.get(value, default)))
+        return self._defaults.get(value, default)
+
 class Notice(object):
     """ Hold a notice """
 
@@ -113,14 +265,17 @@ class Gateway(object):
     # 2017-08-17 18:05:16.935947527 -0400 EDT
     _TIME_RE = re.compile(r'(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s+(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<seconds>\d{2})(\.\d+)?\s+(?P<offhour>[+-]\d{2})(?P<offmin>\d{2})\s+(?P<tzname>[A-Z]+)')
 
-    def __init__(self, options, gw_id, frequency_plan, latitude, longitude, router):
+    def __init__(self, options, config, gw_id, frequency_plan, latitude, longitude, router):
         """"""
         self._options = options
+        self._config = config
         self._activated = False
         self._active = True
         self._collaborators = {}
         self._frequency_plan = frequency_plan
         self._gw_id = gw_id
+        self._cc = []
+        self._alias = gw_id
         self._info = {}
         self._info_old = {}
         self._late = datetime.timedelta(0)
@@ -135,6 +290,13 @@ class Gateway(object):
         self._status_time = None
         self._was_active = True
 
+        # Apply defaults
+        for key, value in self._config.gateway(gw_id).items():
+            if key == "alias":
+                self._alias = value
+            elif key == "cc":
+                self._cc = value
+
     @staticmethod
     def sign(var):
         """ Return sign of var """
@@ -147,20 +309,22 @@ class Gateway(object):
             return 0
 
     def __repr__(self):
-        return "%s: %s %s %f, %f %s" % (self._gw_id,
-                                        self._activated,
-                                        self._frequency_plan,
-                                        self._latitude,
-                                        self._longitude,
-                                        self._router)
+        return "%s: %s %s %s %f, %f %s" % (self._alias,
+                                           self._gw_id,
+                                           self._activated,
+                                           self._frequency_plan,
+                                           self._latitude,
+                                           self._longitude,
+                                           self._router)
 
     def __str__(self):
-        return "%s: %s %s %f, %f %s" % (self._gw_id,
-                                        self._activated,
-                                        self._frequency_plan,
-                                        self._latitude,
-                                        self._longitude,
-                                        self._router)
+        return "%s: %s %s %s %f, %f %s" % (self._alias,
+                                           self._gw_id,
+                                           self._activated,
+                                           self._frequency_plan,
+                                           self._latitude,
+                                           self._longitude,
+                                           self._router)
 
     def _get_response(self, *args):
         """ Issue a command and get the response """
@@ -414,8 +578,13 @@ class Gateway(object):
         self._late = late
 
     @property
+    def alias(self):
+        ''' Get Alias '''
+        return self._alias
+
+    @property
     def gw_id(self):
-        ''' Get name '''
+        ''' Get id '''
         return self._gw_id
 
     @property
@@ -518,6 +687,12 @@ class Gateway(object):
         except KeyError:
             return None
 
+    @property
+    def cc(self):
+        ''' CC list '''
+
+        return self._cc
+
 class Gateways(object):
     ''' Hold and dump/restore a list of Gateways '''
 
@@ -525,8 +700,9 @@ class Gateways(object):
     #1       ttn-ith-test    false           AU_915_928      (42.517288, -76.710183, %!f(int=0))
     _LINE_RE = re.compile(r"^\d+\s+(?P<id>[a-z0-9-]+)\s+(?P<activated>true|false)\s+(?P<frequency_plan>(AU|EU|IN|KR|US|AS)_\d{3}_\d{3})\s+\((?P<lat>-?\d+\.\d+),\s+(?P<long>-?\d+.\d+),.*$")
 
-    def __init__(self, options):
+    def __init__(self, options, config):
         self._options = options
+        self._config = config
         self._gateways = dict()
         self._loaded = False
         if options.load:
@@ -590,7 +766,7 @@ class Gateways(object):
         if self._options.verbose:
             print("Found %d gateways:" % len(self._gateways))
             for gateway in self._gateways.values():
-                print("\t%s - %s" % (gateway.gw_id, gateway.description))
+                print("\t%s(%s) - %s" % (gateway.alias, gateway.gw_id, gateway.description))
 
         return True
 
@@ -638,6 +814,7 @@ class Gateways(object):
                 gateway.longitude = match.group('long')
             except KeyError:
                 gateway = Gateway(self._options,
+                                  self._config,
                                   match.group('id'),
                                   match.group('frequency_plan'),
                                   match.group('lat'),
@@ -692,14 +869,18 @@ def send_alerts(options, user, destinations):
         body = []
         body.append("Alerts:")
         for gateway in gateways:
-            body.append("gateway %s '%s': \n\t%s" % (gateway.gw_id,
-                                                     gateway.description,
-                                                     "\n\t".join(str(x) for x in gateway.notices())))
+            if gateway.cc:
+                msg['Cc'] += ", ".join(gateway.cc)
+            body.append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
+                                                         gateway.gw_id,
+                                                         gateway.description,
+                                                         "\n\t".join(str(x) for x in gateway.notices())))
 
         msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
         dest = [user.email if options.test else destination]
         dest.extend(options.cc)
+        dest.extend(gateway.cc)
         sendmail(options, fromaddr, dest, msg)
 
 def send_gateways(options, user, all_gateways):
@@ -727,6 +908,8 @@ def send_gateways(options, user, all_gateways):
         body = []
         body.append("Gateways you monitor:")
         for gateway in gateways:
+            if gateway.cc:
+                msg['Cc'] += ", ".join(gateway.cc)
             body.append("%s\n" % "\n\t".join(gateway.pretty()))
             body.append("\t\t%s" % "\n\t\t".join(x.long() for x in gateway.log))
 
@@ -734,6 +917,7 @@ def send_gateways(options, user, all_gateways):
 
         dest = ['jch@honig.net' if options.test else destination]
         dest.extend(options.cc)
+        dest.extend(gateway.cc)
         sendmail(options, fromaddr, dest, msg)
 
 class User(object):
@@ -865,46 +1049,58 @@ def get_ttnctl():
         arch = u_arch
     return "ttnctl-%s-%s" % (system, arch)
 
-def main():
-    """ Figure out what we should do """
+def parse_args():
+    ''' Argument parsing '''
+    parser = argparse.ArgumentParser(description="Monitor TTN gateways", add_help=False)
 
-    parser = argparse.ArgumentParser(description="Monitor TTN gateways")
+    # Parse for config file
+    group = parser.add_argument_group('optional arguments')
+    group.add_argument("-h", "--help",
+                       dest="help", default=False,
+                       action='store_true',
+                       help="show this help message and exit")
 
-    #	Debugging
+    group = parser.add_argument_group("Config file")
+    group.add_argument("-C", "--config",
+                       dest="config",
+                       help="Path to the config file")
+
     group = parser.add_argument_group("Debugging options")
+    group.add_argument("-n", "--noop",
+                       dest="noop", default=False,
+                       action='store_true',
+                       help="Don't make changes, just list what we are going to do")
     group.add_argument("-d", "--debug",
                        dest="debug", default=False,
                        action='store_true',
-                       help="print debugging messages")
-    group.add_argument("--nodebug",
-                       dest="debug",
-                       action='store_false',
                        help="print debugging messages")
     group.add_argument("-v", "--verbose",
                        dest="verbose", default=False,
                        action='store_true',
                        help="print verbose messages")
-    group.add_argument("-n", "--noop",
-                       dest="noop", default=False,
-                       action='store_true',
-                       help="Don't make changes, just list what we are going to do")
+
+    (options, extras) = parser.parse_known_args()
+
+    config = Config(options)
+
+    #	Debugging
 
     group = parser.add_argument_group("Behavior")
     group.add_argument("--timeout",
-                       dest="timeout", type=float, default=300,
+                       dest="timeout", type=float, default=config.default('timeout', 300),
                        help="Timeout between polls, in seconds")
     group.add_argument("--late",
-                       dest="late", default=90,
+                       dest="late", default=config.default('late', 90),
                        help="Interval to mark gateway as not responding")
     group.add_argument("--from",
-                       dest="fromaddr", required=True,
+                       dest="fromaddr", default=config.default('from', None),
                        help="From address for notification emails")
     group.add_argument("--cc",
-                       dest="cc", default=[],
+                       dest="cc", default=config.default('cc', []),
                        action="append",
                        help="List of e-mail cc's")
     group.add_argument("--test",
-                       dest="test", default=False,
+                       dest="test", default=config.default('test', False),
                        action="store_true",
                        help="Don't send e-mail to victims")
 
@@ -924,10 +1120,25 @@ def main():
                        dest="statusdb", default="./monitor-status.db",
                        help="Name of status DB")
 
-    options = parser.parse_args()
+    options = parser.parse_args(extras, namespace=options)
+
+    # Simpulate help
+    if options.help:
+        parser.print_help()
+        sys.exit(0)
+
+    if options.debug:
+        print("ARGS1: %s" % pprint.pformat(options))
+
+    # Debug implies verbose
     if options.debug:
         options.verbose = options.debug
 
+    # From is required
+    if not options.fromaddr:
+        parser.error('argument --from is required')
+
+    # Find out binary
     if not options.binary:
         for binary in [get_ttnctl(), 'ttnctl']:
             for dirname in [".", os.path.dirname(sys.argv[0])]:
@@ -935,12 +1146,25 @@ def main():
                 if os.access(path, os.X_OK):
                     options.binary = path
                     break
+    if not options.binary:
+        parser.error("argument --binary is required if binary is not in current directory")
+
+    if options.debug:
+        print("ARGS: %s" % pprint.pformat(options))
+
+    return options, config
+
+def main():
+    """ Figure out what we should do """
+
+    # Read config file and parse options
+    options, config = parse_args()
 
     # Get user info
     user = User(options)
 
     # Get the list of gateways
-    gateways = Gateways(options)
+    gateways = Gateways(options, config)
 
     while gateways.poll():
         destinations = dict()
@@ -956,8 +1180,9 @@ def main():
 
             if gateway.notices():
                 if options.verbose:
-                    print("Need to notify %s about %s: %s" %
+                    print("Need to notify %s about %s(%s): %s" %
                           (gateway.contact_email if gateway.contact_email else 'someone',
+                           gateway.alias,
                            gateway.gw_id,
                            gateway.description))
                 dest = gateway.contact_email if gateway.contact_email else options.fromaddr
