@@ -657,35 +657,26 @@ class Gateway(object):
     @property
     def last_seen(self):
         ''' Get Last seen from info '''
-        try:
-            return self._time(self._info['Last seen'])
-        except KeyError:
-            return None
+
+        return self._time(self._info.get('Last seen'))
 
     @property
     def reported_time(self):
         ''' Get Reported time from info '''
-        try:
-            return self._time(self._info['Reported time'])
-        except KeyError:
-            return None
+
+        return self._time(self._info.get('Reported time'))
 
     @property
     def description(self):
         ''' Get Description from info '''
 
-        try:
-            return self._info['Description.info']
-        except KeyError:
-            return None
+        return self._info.get('Description.info')
 
     @property
     def contact_email(self):
         ''' Contact email '''
-        try:
-            return self._info['Contact email']
-        except KeyError:
-            return None
+
+        return self._info.get('Contact email')
 
     @property
     def cc(self):
