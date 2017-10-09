@@ -91,10 +91,12 @@ Global parameters:
 
 Group defaults:
 	+ cc: string or list: Specify additional cc's
+	- to: string - Override the contact e-mail
 
 Gateway parameters:
 	+ alias: A string specifying a short name for the gateway
 	+ cc: string or list: Specify additional cc's
+	- to: string - Override the contact e-mail
 
 Example:
 

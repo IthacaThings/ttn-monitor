@@ -60,11 +60,22 @@ _ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
 # Extract key and value
 _INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
 
-def sendmail(options, fromaddr, dest, msg):
+def sendmail(options, to, cc, subject, body):
     ''' Do the work of sending mail '''
 
+    dest = set()
+    dest.add(to)
+    dest.update(cc)
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = options.fromaddr
+    msg['To'] = to
+    msg['Cc'] = ", ".join(cc)
+    msg.attach(MIMEText("\n\n".join(body), 'plain'))
+    
     if options.debug:
-        print("SENDMAIL(%s -> %s)" % (fromaddr, ",".join(dest)))
+        print("SENDMAIL(%s -> %s)" % (options.fromaddr, ",".join(dest)))
     server = smtplib.SMTP('localhost')
     try:
         #        server.set_debuglevel(True)
@@ -77,7 +88,7 @@ def sendmail(options, fromaddr, dest, msg):
             server.starttls()
             server.ehlo() # re-identify ourselves over TLS connection
 
-        resp = server.sendmail(fromaddr, dest, msg.as_string())
+        resp = server.sendmail(options.fromaddr, dest, msg.as_string())
         if options.debug:
             print("SENDMAIL: %s" % resp)
     finally:
@@ -150,7 +161,7 @@ class Config(object):
                             raise self.ParseError("%s is not a string" % val)
                 else:
                     raise self.ParseError("%s is not a list or string" % value)
-            elif key == 'from':
+            elif key == 'from' or key == 'to':
                 if not isinstance(value, str):
                     raise self.ParseError("%s is not a string" % val)
             elif key == 'late':
@@ -184,14 +195,14 @@ class Config(object):
 
             for gateway, value in config.items():
                 if gateway.lower() == "defaults":
-                    self._validate(value, [ 'cc' ])
+                    self._validate(value, [ 'cc', 'to' ])
                     self._groups[group] = value
                     if self._options.debug:
                         print("Config: %s: %s" % (group, value))
                 else:
                     if not isinstance(gateway, str):
                         self.ParserError("Gateway ID is not a string: %s" % gateway)
-                    self._validate(value, [ 'cc', 'alias' ])
+                    self._validate(value, [ 'to', 'cc', 'alias' ])
                     self._gateway_group[gateway] = group
                     self._gateways[gateway] = value
                     if self._options.debug:
@@ -215,7 +226,9 @@ class Config(object):
             for key, value in self._gateways[gw_id].items():
                 if key == 'cc':
                     if defaults.has_key('cc'):
+                        print("XXX 1 %s", defaults[key])
                         defaults[key].extend(value)
+                        print("XXX 2 %s", defaults[key])
                 defaults[key] = value
         except KeyError:
             pass
@@ -274,7 +287,6 @@ class Gateway(object):
         self._collaborators = {}
         self._frequency_plan = frequency_plan
         self._gw_id = gw_id
-        self._cc = []
         self._alias = gw_id
         self._info = {}
         self._info_old = {}
@@ -289,13 +301,6 @@ class Gateway(object):
                               'last': None}
         self._status_time = None
         self._was_active = True
-
-        # Apply defaults
-        for key, value in self._config.gateway(gw_id).items():
-            if key == "alias":
-                self._alias = value
-            elif key == "cc":
-                self._cc = value
 
     @staticmethod
     def sign(var):
@@ -580,7 +585,8 @@ class Gateway(object):
     @property
     def alias(self):
         ''' Get Alias '''
-        return self._alias
+
+        return self._config.gateway(self._gw_id).get('alias', self._gw_id)
 
     @property
     def gw_id(self):
@@ -676,13 +682,14 @@ class Gateway(object):
     def contact_email(self):
         ''' Contact email '''
 
-        return self._info.get('Contact email')
+        return self._config.gateway(self._gw_id).get('to', self._info.get('Contact email'))
 
     @property
     def cc(self):
         ''' CC list '''
 
-        return self._cc
+        return self._config.gateway(self._gw_id).get('cc', [])
+
 
 class Gateways(object):
     ''' Hold and dump/restore a list of Gateways '''
@@ -842,74 +849,45 @@ class Gateways(object):
         ''' Return a spefic gateway '''
         return self._gateways[gw_id]
 
-def send_alerts(options, user, destinations):
+def gateway_email(options, user, gateways, message):
     ''' Send e-mail about each gateway '''
 
-    fromaddr = options.fromaddr if options.fromaddr else user.email
+    body = dict()
+    to = dict()
+    cc = dict()
+    subject = "TTN Gateway alert %s" % datetime.datetime.now(tzlocal()).strftime("%F %R %Z")
 
-    for destination, gateways in destinations.items():
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = "TTN Gateway alert %s" % \
-                         datetime.datetime.now(tzlocal()).strftime("%F %R %Z")
-        msg['From'] = fromaddr
-        msg['To'] = destination
-        # XXX - Include user on cc list?
+    for gateway in gateways:
+        dest = gateway.contact_email
+        if not dest:
+            gateway.contact_email = options.fromaddr
+        cc_list = set()
         if options.cc:
-            msg['Cc'] = ", ".join(options.cc)
+            cc_list.update(options.cc)
+        if gateway.cc:
+            cc_list.update(gateway.cc)
+        cc_list.add(dest)
+        key = hash(",".join(sorted(cc_list)))
+        cc_list.discard(dest)
+        if not to.has_key(key):
+            to[key] = dest
+        if not cc.has_key(key):
+            cc[key] = cc_list
 
-        body = []
-        body.append("Alerts:")
-        for gateway in gateways:
-            if gateway.cc:
-                msg['Cc'] += ", ".join(gateway.cc)
-            body.append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
-                                                         gateway.gw_id,
-                                                         gateway.description,
-                                                         "\n\t".join(str(x) for x in gateway.notices())))
+        if not body.has_key(key):
+            body[key] = []
+            body[key].append('Alerts:')
+        body[key].append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
+                                                          gateway.gw_id,
+                                                          gateway.description,
+                                                          "\n\t".join(str(x) for x in gateway.notices())))
 
-        msg.attach(MIMEText("\n\n".join(body), 'plain'))
-
-        dest = [user.email if options.test else destination]
-        dest.extend(options.cc)
-        dest.extend(gateway.cc)
-        sendmail(options, fromaddr, dest, msg)
-
-def send_gateways(options, user, all_gateways):
-    ''' Send e-mail about each gateway '''
-
-    fromaddr = options.fromaddr if options.fromaddr else user.email
-
-    destinations = {}
-    for gateway in all_gateways.gateways:
-        dest = gateway.contact_email if gateway.contact_email else fromaddr
-        try:
-            destinations[dest].append(gateway)
-        except KeyError:
-            destinations[dest] = [gateway]
-
-    for destination, gateways in destinations.items():
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = "TTN Gateway Summary for %s" % \
-                         datetime.datetime.now(tzlocal()).strftime("%F")
-        msg['From'] = fromaddr
-        msg['To'] = destination
-        if options.cc:
-            msg['Cc'] = ", ".join(options.cc)
-
-        body = []
-        body.append("Gateways you monitor:")
-        for gateway in gateways:
-            if gateway.cc:
-                msg['Cc'] += ", ".join(gateway.cc)
-            body.append("%s\n" % "\n\t".join(gateway.pretty()))
-            body.append("\t\t%s" % "\n\t\t".join(x.long() for x in gateway.log))
-
-        msg.attach(MIMEText("\n\n".join(body), 'plain'))
-
-        dest = ['jch@honig.net' if options.test else destination]
-        dest.extend(options.cc)
-        dest.extend(gateway.cc)
-        sendmail(options, fromaddr, dest, msg)
+    for key in to.keys():
+        sendmail(options,
+                 to.get(key),
+                 cc.get(key),
+                 subject,
+                 body.get(key))
 
 class User(object):
     """ Get info about user """
@@ -1158,7 +1136,7 @@ def main():
     gateways = Gateways(options, config)
 
     while gateways.poll():
-        destinations = dict()
+        alert_gateways = []
         for gateway in gateways.gateways:
             if gateway.was_active != gateway.is_active():
                 if gateway.is_active():
@@ -1177,12 +1155,9 @@ def main():
                            gateway.gw_id,
                            gateway.description))
                 dest = gateway.contact_email if gateway.contact_email else options.fromaddr
-                try:
-                    destinations[dest].append(gateway)
-                except KeyError:
-                    destinations[dest] = [gateway]
+                alert_gateways.append(gateway)
 
-        send_alerts(options, user, destinations)
+        gateway_email(options, user, alert_gateways, 'Alerts:')
 
         # Save current status
         gateways.save()
@@ -1192,7 +1167,7 @@ def main():
 
         # Send summary at midnight
         if datetime.datetime.now().hour < last_time.hour:
-            send_gateways(options, user, gateways)
+            gateway_email(options, user, alert_gateways, 'Gateways you manage:')
 
         # Clear old notices
         for gateway in gateways.gateways:
