@@ -70,7 +70,7 @@ there. It does not seem to be possible to add just `gateway:status`
 rights via the GUI; any collborators assigned via the GUI appear to
 have `gateway:settings` rights.
 
-# CONFIG FILE
+# Configuration FILE
 
 A configuration file can be used to specify defaults for command line
 options, group gateways togather and specify per-gateway information.
@@ -122,6 +122,7 @@ ttn-ithaca:
     alias: ttn-ith-ecovillage
   eui-00800000a0000d4f:
     alias: ttn-ith-test
+	to: jch@honig.net
       
 ttn-nyc:
   defaults:
@@ -138,15 +139,24 @@ ttn-nyc:
     alias: ttn-nyc-chelsea
 ```
 
+# Docker 
+
+Work is in progress on building a Docker container to run
+ttn-monitor.  
+
+There are a couple of advantages of running ttn-monitor in a Docker
+container.  The first is that all pre-requesites can be included, both
+Linux packages and python packages and some configuration files.
+
+Another advantage is that the monitor-status.db needs to be in sync
+with changes in the code. Whenever the code chages, the Docker
+container will be rebuilt without that file. 
 
 # TODO
 
 Enhancements planned
 
 + ttnctl
-   + [x] Provide registration link if not logged in
-   + [x] Get default e-mail from user status
-   + [x] Automatically download
    + [ ] Check for updates
 + [ ] Pushbullet support
 + [ ] Slack postings
