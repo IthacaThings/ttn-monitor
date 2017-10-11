@@ -70,7 +70,7 @@ there. It does not seem to be possible to add just `gateway:status`
 rights via the GUI; any collborators assigned via the GUI appear to
 have `gateway:settings` rights.
 
-# Configuration FILE
+# Configuration File
 
 A configuration file can be used to specify defaults for command line
 options, group gateways togather and specify per-gateway information.
@@ -83,20 +83,20 @@ a config file from the command line.
 The config file is in [YAML](http://www.yaml.org/start.html) format.
 
 Global parameters:
-	+ `from`: Specify the sending e-mail address
-	+ `test`: Specify test mode (`true` or `false`)
-	+ `late`: Time in seconds to consider a gateway non-responseive (default 90)
-	+ `timeout`: Time between gateway polls in seconds (default 300)
-	+ `cc`: Specify additional Cc addresses
++ `from`: Specify the sending e-mail address
++ `test`: Specify test mode (`true` or `false`)
++ `late`: Time in seconds to consider a gateway non-responseive (default 90)
++ `timeout`: Time between gateway polls in seconds (default 300)
++ `cc`: Specify additional Cc addresses
 
 Group defaults:
-	+ `cc`: Specify additional Cc addresses
-	- `to`: Override gateway To address
++ `cc`: Specify additional Cc addresses
+- `to`: Override gateway To address
 
 Gateway parameters:
-	+ `alias`: A short name of a gateway
-	+ `cc`: Specify additional Cc addresses
-	- `to`: Override gateway To address
++ `alias`: A short name of a gateway
++ `cc`: Specify additional Cc addresses
+- `to`: Override gateway To address
 
 Example:
 
