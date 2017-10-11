@@ -64,8 +64,11 @@ def sendmail(options, to, cc, subject, body):
     ''' Do the work of sending mail '''
 
     dest = set()
-    dest.add(to)
-    dest.update(cc)
+    if options.test:
+        dest.add(options.fromaddr)
+    else:
+        dest.add(to)
+        dest.update(cc)
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
@@ -454,18 +457,21 @@ class Gateway(object):
                     self.notice("Gateway is now responding")
             self._late = late
 
-        for key in ['Description.info',
-                    'Owner',
+        for key in ['Antenna',
+                    'Brand',
+                    'Bridge',
+                    'Contact email'
+                    'Description.info',
+                    'Description.status',
                     'Frequency Plan',
+                    'IP Address',
                     'Location.info',
                     'Location.status',
+                    'Model',
+                    'Owner',
                     'Placement',
                     'Platform',
-                    'Router',
-                    'Bridge',
-                    'IP Address',
-                    'Brand',
-                    'Model']:
+                    'Router']:
             try:
                 if self._info_old[key] != self._info[key]:
                     self.notice('"%s" changed "%s" -> "%s"' % (key,
@@ -486,6 +492,8 @@ class Gateway(object):
                     'Location.status',
                     'Placement',
                     'Platform',
+                    'Antenna',
+                    'Brand',
                     'Router',
                     'Bridge',
                     'IP Address',
@@ -719,6 +727,11 @@ class Gateways(object):
                                                                      self._options.statusdb))
         filep.close()
 
+    def clear(self):
+        ''' Call clear function on each gateway '''
+        for gateway in self._gateways.values():
+            gateway.clear()
+
     def save(self):
         ''' Dump the list of gateways '''
 
@@ -849,18 +862,15 @@ class Gateways(object):
         ''' Return a spefic gateway '''
         return self._gateways[gw_id]
 
-def gateway_email(options, user, gateways, message):
+def gateway_email(options, user, gateways, alert=True):
     ''' Send e-mail about each gateway '''
 
     body = dict()
     to = dict()
     cc = dict()
-    subject = "TTN Gateway alert %s" % datetime.datetime.now(tzlocal()).strftime("%F %R %Z")
 
     for gateway in gateways:
-        dest = gateway.contact_email
-        if not dest:
-            gateway.contact_email = options.fromaddr
+        dest = gateway.contact_email or options.fromaddr
         cc_list = set()
         if options.cc:
             cc_list.update(options.cc)
@@ -876,17 +886,21 @@ def gateway_email(options, user, gateways, message):
 
         if not body.has_key(key):
             body[key] = []
-            body[key].append('Alerts:')
+        if alert:
+            rest = "\n\t".join(str(x) for x in gateway.notices())
+        else:
+            rest = gateway.pretty()
         body[key].append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
                                                           gateway.gw_id,
                                                           gateway.description,
-                                                          "\n\t".join(str(x) for x in gateway.notices())))
+                                                          rest))
 
     for key in to.keys():
         sendmail(options,
                  to.get(key),
                  cc.get(key),
-                 subject,
+                 "TTN Gateway %s %s" % ("Alert!" if alert else "Summary",
+                                        datetime.datetime.now(tzlocal()).strftime("%F %R %Z")),
                  body.get(key))
 
 class User(object):
@@ -1157,7 +1171,7 @@ def main():
                 dest = gateway.contact_email if gateway.contact_email else options.fromaddr
                 alert_gateways.append(gateway)
 
-        gateway_email(options, user, alert_gateways, 'Alerts:')
+        gateway_email(options, user, alert_gateways)
 
         # Save current status
         gateways.save()
@@ -1167,11 +1181,10 @@ def main():
 
         # Send summary at midnight
         if datetime.datetime.now().hour < last_time.hour:
-            gateway_email(options, user, alert_gateways, 'Gateways you manage:')
+            gateway_email(options, user, gateways, alert=False)
 
         # Clear old notices
-        for gateway in gateways.gateways:
-            gateway.clear()
+        gateways.clear()
 
 if __name__ == "__main__":
     try:
