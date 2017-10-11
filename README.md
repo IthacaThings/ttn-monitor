@@ -83,20 +83,20 @@ a config file from the command line.
 The config file is in [YAML](http://www.yaml.org/start.html) format.
 
 Global parameters:
-	+ from: string: Specify the sending e-mail address
-	+ test: boolean: Specify test mode
-	+ late: float: seconds XXX
-	+ timeout: float: secons XXX
-	+ cc: string or list: Specify additional cc's
+	+ `from`: Specify the sending e-mail address
+	+ `test`: Specify test mode (`true` or `false`)
+	+ `late`: Time in seconds to consider a gateway non-responseive (default 90)
+	+ `timeout`: Time between gateway polls in seconds (default 300)
+	+ `cc`: Specify additional Cc addresses
 
 Group defaults:
-	+ cc: string or list: Specify additional cc's
-	- to: string - Override the contact e-mail
+	+ `cc`: Specify additional Cc addresses
+	- `to`: Override gateway To address
 
 Gateway parameters:
-	+ alias: A string specifying a short name for the gateway
-	+ cc: string or list: Specify additional cc's
-	- to: string - Override the contact e-mail
+	+ `alias`: A short name of a gateway
+	+ `cc`: Specify additional Cc addresses
+	- `to`: Override gateway To address
 
 Example:
 
