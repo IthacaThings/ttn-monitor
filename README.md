@@ -91,12 +91,12 @@ Global parameters:
 
 Group defaults:
 + `cc`: Specify additional Cc addresses
-- `to`: Override gateway To address
++ `to`: Override gateway To address
 
 Gateway parameters:
 + `alias`: A short name of a gateway
 + `cc`: Specify additional Cc addresses
-- `to`: Override gateway To address
++ `to`: Override gateway To address
 
 Example:
 
