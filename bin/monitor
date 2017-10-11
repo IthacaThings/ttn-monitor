@@ -1181,7 +1181,7 @@ def main():
 
         # Send summary at midnight
         if datetime.datetime.now().hour < last_time.hour:
-            gateway_email(options, user, gateways, alert=False)
+            gateway_email(options, user, gateways.gateways, alert=False)
 
         # Clear old notices
         gateways.clear()
