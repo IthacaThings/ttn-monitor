@@ -889,7 +889,7 @@ def gateway_email(options, user, gateways, alert=True):
         if alert:
             rest = "\n\t".join(str(x) for x in gateway.notices())
         else:
-            rest = gateway.pretty()
+            rest = "\n\t".join(gateway.pretty())
         body[key].append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
                                                           gateway.gw_id,
                                                           gateway.description,
