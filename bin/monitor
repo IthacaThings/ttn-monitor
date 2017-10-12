@@ -76,7 +76,7 @@ def sendmail(options, to, cc, subject, body):
     msg['To'] = to
     msg['Cc'] = ", ".join(cc)
     msg.attach(MIMEText("\n\n".join(body), 'plain'))
-    
+
     if options.debug:
         print("SENDMAIL(%s -> %s)" % (options.fromaddr, ",".join(dest)))
     server = smtplib.SMTP('localhost')
@@ -117,7 +117,7 @@ class Config(object):
 
         # Read the config file
         if self._options.config:
-            config_files = [ options.config ]
+            config_files = [options.config]
         else:
             config_files = ['./.ttn-monitor.yaml', '~/.ttn-monitor.yaml']
         for config_file in config_files:
@@ -157,7 +157,7 @@ class Config(object):
                 raise self.ParseError("invalid Global key: %s" % (key))
             if key == 'cc':
                 if isinstance(value, str):
-                    config['cc'] = [ value ]
+                    config['cc'] = [value]
                 elif isinstance(value, list):
                     for val in value:
                         if not isinstance(val, str):
@@ -180,7 +180,7 @@ class Config(object):
                 if not isinstance(value, str):
                     raise self.ParseError("%s is not a string" % value)
             else:
-                raise self.ParserError("Internal error parsing %s" % value)
+                raise self.ParseError("Internal error parsing %s" % value)
 
     def _config_top(self):
         """ Parse the top level config items """
@@ -190,7 +190,7 @@ class Config(object):
 
         for group, config in self._config_data.items():
             if group.lower() == "global":
-                self._validate(config, [ 'cc', 'from', 'late', 'timeout', 'test' ])
+                self._validate(config, ['cc', 'from', 'late', 'timeout', 'test'])
                 self._defaults = config
                 if self._options.debug:
                     print("Config: defaults %s" % pprint.pformat(self._defaults))
@@ -198,14 +198,14 @@ class Config(object):
 
             for gateway, value in config.items():
                 if gateway.lower() == "defaults":
-                    self._validate(value, [ 'cc', 'to' ])
+                    self._validate(value, ['cc', 'to'])
                     self._groups[group] = value
                     if self._options.debug:
                         print("Config: %s: %s" % (group, value))
                 else:
                     if not isinstance(gateway, str):
-                        self.ParserError("Gateway ID is not a string: %s" % gateway)
-                    self._validate(value, [ 'to', 'cc', 'alias' ])
+                        self.ParseError("Gateway ID is not a string: %s" % gateway)
+                    self._validate(value, ['to', 'cc', 'alias'])
                     self._gateway_group[gateway] = group
                     self._gateways[gateway] = value
                     if self._options.debug:
@@ -242,7 +242,9 @@ class Config(object):
         ''' Return a default value '''
 
         if self._options.debug:
-            print("Config.default(%s, %s): %s" % (value, default, self._defaults.get(value, default)))
+            print("Config.default(%s, %s): %s" % (value,
+                                                  default,
+                                                  self._defaults.get(value, default)))
         return self._defaults.get(value, default)
 
 class Notice(object):
@@ -411,7 +413,7 @@ class Gateway(object):
             print("GET STATUS: %s" % self)
 
         try:
-            cmd = [ "gateway", "status", self._gw_id ]
+            cmd = ["gateway", "status", self._gw_id]
             try:
                 cmd.extend(["--router-id", self._info['Router']])
             except KeyError:
@@ -1168,7 +1170,6 @@ def main():
                            gateway.alias,
                            gateway.gw_id,
                            gateway.description))
-                dest = gateway.contact_email if gateway.contact_email else options.fromaddr
                 alert_gateways.append(gateway)
 
         gateway_email(options, user, alert_gateways)
