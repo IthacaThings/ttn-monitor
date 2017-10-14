@@ -540,9 +540,9 @@ class Gateway(object):
                 elif desc == 'Reported time':
                     value = self.reported_time if self.reported_time else "N/A"
                 else:
+                    value = self._info.get(desc, "N/A")
                     if desc.endswith('.info') or desc.endswith('.status'):
                         desc, x, x = desc.partition('.')
-                    value = self._info.get(desc, "N/A")
                 lines.append("\t\t%15s: %s" % (desc, value))
 
         return lines
