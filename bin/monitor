@@ -78,6 +78,10 @@ def sendmail(options, to, cc, subject, body):
     msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
     if options.debug:
+        print("MAIL: From: %s To: %s Cc: %s Subject: %s" % (msg.get('From'),
+                                                            msg.get('To'),
+                                                            msg.get('Cc'),
+                                                            msg.get('Subject')))
         print("SENDMAIL(%s -> %s)" % (options.fromaddr, ",".join(dest)))
     server = smtplib.SMTP('localhost')
     try:
