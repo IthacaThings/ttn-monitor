@@ -490,26 +490,60 @@ class Gateway(object):
         ''' Pretty print a bunch of gateway info '''
 
         lines = []
-        for key in ['Gateway ID',
+        for key in ['%Overview',
+                    'Gateway ID',
                     'Description.info',
                     'Owner',
                     'Frequency Plan',
-                    'Location.info',
-                    'Location.status',
-                    'Placement',
-                    'Platform',
-                    'Antenna',
-                    'Brand',
                     'Router',
+                    'Last seen',
+                    'Reported time',
+                    '%Config',
+                    '%Status',
+                    'Description.status',
+                    'Contact email',
                     'Bridge',
                     'IP Address',
                     'Rtt',
                     'Rx',
-                    'Tx']:
-            try:
-                lines.append("\t%s:\t%s" % (key, self._info[key]))
-            except KeyError:
-                pass
+                    'Tx',
+                    'Location.status',
+                    '%Information',
+                    'Brand',
+                    'Platform',
+                    'Model',
+                    'Antenna',
+                    '%Location',
+                    'Placement',
+                    'Location.info',
+                    '%Privacy',
+                    'Status Public',
+                    'Location Public',
+                    'Owner Public']:
+            if key == '%Config':
+                lines.append("\tConfig:")
+                config = self._config.gateway(self.gw_id)
+                for key in sorted(config.keys()):
+                    value = config.get(key)
+                    if isinstance(value, list):
+                        value = ", ".join(value)
+                    lines.append("\t\t%15s: %s" % (key.capitalize(), value))
+            elif key.startswith('%'):
+                lines.append("\t%s:" % key[1:])
+            else:
+                desc = key
+                if desc == 'Last seen':
+                    if self.last_seen:
+                        value = "%d seconds ago" % (self.status_time - self.last_seen).total_seconds()
+                    else:
+                        value = "N/A"
+                elif desc == 'Reported time':
+                    value = self.reported_time if self.reported_time else "N/A"
+                else:
+                    if desc.endswith('.info') or desc.endswith('.status'):
+                        desc, x, x = desc.partition('.')
+                    value = self._info.get(desc, "N/A")
+                lines.append("\t\t%15s: %s" % (desc, value))
 
         return lines
 
@@ -1067,6 +1101,10 @@ def parse_args():
                        dest="verbose", default=False,
                        action='store_true',
                        help="print verbose messages")
+    group.add_argument("-S", "--summary",
+                       dest="summary", default=False,
+                       action="store_true",
+                       help="Print Summary and exit")
 
     (options, extras) = parser.parse_known_args()
 
@@ -1154,6 +1192,15 @@ def main():
 
     # Get the list of gateways
     gateways = Gateways(options, config)
+
+    if options.summary:
+        gateways.poll()
+        # XXX - Group by group
+        for gateway in gateways.gateways:
+            if gateway.is_active():
+                gateway.get_status()
+            print("%s:\n%s\n" % (gateway.alias, "\n".join(gateway.pretty())))
+        sys.exit(0)
 
     while gateways.poll():
         alert_gateways = []
