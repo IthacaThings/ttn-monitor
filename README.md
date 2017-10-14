@@ -9,6 +9,9 @@ of all TTN gateways for which you are listed as an owner.
 
 # Table of Contents
 1. [Initial Setup](#initial-setup)
+1. [Gateway Summary](#gateway-summary)
+1. [Configuration File](#configuration-file)
+1. [Docker](#docker)
 1. [TODO](#todo)
 
 # Initial Setup
@@ -43,16 +46,15 @@ login with:
 ```
 bin/ttnctl user login TOKEN
 ```
-
 ## Start the monitor in test mode
 
 ```
 bin/monitor --test -v
 ```
 
-In test mode, e-mails will be sent to your e-mail address, not to the
-e-mail addresses of the gateway. Verbose (-v) mode will show you
-output of what is happening.
+In test mode, e-mails will be sent to the from address, not to the
+e-mail addresses of the gateway. Verbose (-v) mode will show you what
+is happening.
 
 ## For each gateway you want to monitor
 
@@ -69,6 +71,15 @@ From the GUI you can edit gateway settings and add collaborators
 there. It does not seem to be possible to add just `gateway:status`
 rights via the GUI; any collborators assigned via the GUI appear to
 have `gateway:settings` rights.
+
+# Gateway Summary
+
+```
+bin/monitor --summary
+```
+
+This will print a summary of all the gateways on your account in a
+format similar to the TTN Console.
 
 # Configuration File
 
