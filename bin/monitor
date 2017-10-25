@@ -926,10 +926,14 @@ def gateway_email(options, user, gateways, alert=True):
 
         if not body.has_key(key):
             body[key] = []
-        if alert:
-            rest = "\n\t".join(str(x) for x in gateway.notices())
-        else:
-            rest = "\n\t".join(gateway.pretty())
+
+        # Print Alerts
+        rest = "\n\t".join(str(x) for x in gateway.notices())
+
+        # Include summary if this is daily e-mail
+        if not alert:
+            rest += "\n\t".join(gateway.pretty())
+
         body[key].append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
                                                           gateway.gw_id,
                                                           gateway.description,
