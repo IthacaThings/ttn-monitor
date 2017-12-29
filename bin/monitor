@@ -445,12 +445,14 @@ class Gateway(object):
                 # XXX - ahead by 2, behind by 30?
                 if abs(offset.total_seconds() > 2):
                     if offset.total_seconds() > 0:
-                        self.notice("Gateway time is ahead by %s" % offset)
+                        if self._offset.total_secconds() <= 0:
+                            self.notice("Gateway time is ahead by %s" % offset, logonly=True)
                     elif offset.total_seconds() < 2:
-                        self.notice("Gateway time is behind by %s" % offset)
+                        if self._offset.total_seconds() > 0:
+                            self.notice("Gateway time is behind by %s" % offset, logonly=True)
                 elif abs(self.offset.total_seconds()) < 2:
                     if abs(self._offset.total_seconds()) >= 2:
-                        self.notice("Gateway time is within 2 seconds")
+                        self.notice("Gateway time is within 2 seconds", logonly=True)
             self._offset = offset
 
             late = self.status_time - self.last_seen
@@ -555,7 +557,7 @@ class Gateway(object):
         ''' Mark active '''
         self._active = True
 
-    def notice(self, msg):
+    def notice(self, msg, logonly=False):
         ''' Add a notice '''
 
         if not msg:
@@ -564,7 +566,8 @@ class Gateway(object):
         notice = Notice(msg)
         if self._options.debug:
             print("NOTICE: %s" % notice)
-        self._notices.append(notice)
+        if not logonly:
+            self._notices.append(notice)
         self._log.append(notice)
 
     def notices(self):
