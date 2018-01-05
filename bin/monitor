@@ -568,7 +568,7 @@ class Gateway(object):
             print("NOTICE: %s" % notice)
         if not logonly:
             self._notices.append(notice)
-        self._log.append(notice)
+        self._log.append("%s %s" % (datetime.datetime.now(tzlocal()).strftime("%F %R %Z"), notice))
 
     def notices(self):
         ''' Read notices '''
