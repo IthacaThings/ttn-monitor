@@ -936,7 +936,9 @@ def gateway_email(options, user, gateways, alert=True):
         # Include summary and log if this is daily e-mail
         if not alert:
             rest += "\n\t".join(gateway.pretty())
-            rest += "\n\t".join(str(x) for x in gateway.log)
+            if gateway.log:
+                rest += "\n\tLog:\n"
+                rest += "\n\t".join(str(x) for x in gateway.log)
 
         body[key].append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
                                                           gateway.gw_id,
