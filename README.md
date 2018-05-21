@@ -39,7 +39,7 @@ cd ttn-monitor
 ## Authenticate to your TTN account
 
 Click
-[this link]("https://account.thethingsnetwork.org/users/authorize?client_id=ttnctl&redirect_uri=/oauth/callback/ttnctl&response_type=code") and
+[this link](https://account.thethingsnetwork.org/users/authorize?client_id=ttnctl&redirect_uri=/oauth/callback/ttnctl&response_type=code) and
 authenticate to TTN, if necessary. Copy the provided token and
 login with:
 
