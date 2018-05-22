@@ -12,6 +12,8 @@ import subprocess
 import sys
 import time
 
+import geopy.distance
+
 try:
     import cPickle as pickle
 except ImportError:
@@ -31,7 +33,7 @@ from dateutil.tz import tzlocal, tzoffset
 """
 MIT License
 
-Copyright (c) 2017 Jeffrey C Honig
+Copyright (c) 2017,2018 Jeffrey C Honig
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -286,6 +288,7 @@ class Gateway(object):
 
     # 2017-08-17 18:05:16.935947527 -0400 EDT
     _TIME_RE = re.compile(r'(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})\s+(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<seconds>\d{2})(\.\d+)?\s+(?P<offhour>[+-]\d{2})(?P<offmin>\d{2})\s+(?P<tzname>[A-Z]+)')
+    _LOCATION_RE = re.compile(r'\((?P<lat>-?\d+\.\d+),\s*(?P<lon>-?\d+\.\d+);\s+(?P<source>.*)\)$')
 
     def __init__(self, options, config, gw_id, frequency_plan, latitude, longitude, router):
         """"""
@@ -481,13 +484,46 @@ class Gateway(object):
                     'Platform',
                     'Router']:
             try:
+                result = None
                 if self._info_old[key] != self._info[key]:
-                    self.notice('"%s" changed "%s" -> "%s"' % (key,
-                                                               self._info_old[key],
-                                                               self._info[key]))
+                    msg = '"%s" changed "%s" -> "%s"' % (key,
+                                                         self._info_old[key],
+                                                         self._info[key])
+                    if key.startswith('Location.'):
+                        result = self._location_match(key)
+                        if result == False:
+                            continue
+                    if result:
+                        msg += ": " + result
+                    self.notice(msg)
             except KeyError:
                 pass
 
+    def _location_match(self, key):
+        """ Compare location for a less picky match """
+
+        result = []
+        match = self._LOCATION_RE.match(self._info[key])
+        if not match:
+            return None
+        old_match = self._LOCATION_RE.match(self._info_old[key])
+        if not old_match:
+            return None
+        if match.group('source') != old_match.group('source'):
+            result.append('Source changed')
+        old = (float(old_match.group('lat')), float(old_match.group('lon')))
+        new = (float(match.group('lat')), float(match.group('lon')))
+        distance = geopy.distance.vincenty(old, new)
+        if distance.feet > 1000:
+            result.append("moved %.2f miles" % distance.miles)
+        elif distance.feet > 60:
+            result.append("moved %.0f feet" % distance.feet)
+
+        if not result:
+            return False
+
+        return ", ".join(result)
+                                
     def pretty(self):
         ''' Pretty print a bunch of gateway info '''
 
