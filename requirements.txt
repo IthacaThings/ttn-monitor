@@ -1,4 +1,5 @@
 python-dateutil
+python-geoip
 PyYAML
 
 
