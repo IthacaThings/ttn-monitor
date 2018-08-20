@@ -12,6 +12,11 @@ import subprocess
 import sys
 import time
 
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+from dateutil.tz import tzlocal, tzoffset
+
 import geopy.distance
 
 try:
@@ -25,10 +30,6 @@ except ImportError:
     print("Please install PyYaml", file=sys.stderr)
     sys.exit(1)
 
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-from dateutil.tz import tzlocal, tzoffset
 
 """
 MIT License
@@ -158,7 +159,7 @@ class Config(object):
     def _validate(self, config, allowed=[]):
         """ Generic validation """
 
-        for key, value in config.items():
+        for key, value in list(config.items()):
             if key not in allowed:
                 raise self.ParseError("invalid Global key: %s" % (key))
             if key == 'cc':
@@ -194,7 +195,7 @@ class Config(object):
         if self._options.debug:
             print("Config: %s" % pprint.pformat(self._config_data))
 
-        for group, config in self._config_data.items():
+        for group, config in list(self._config_data.items()):
             if group.lower() == "global":
                 self._validate(config, ['cc', 'from', 'late', 'timeout', 'test'])
                 self._defaults = config
@@ -202,7 +203,7 @@ class Config(object):
                     print("Config: defaults %s" % pprint.pformat(self._defaults))
                 continue
 
-            for gateway, value in config.items():
+            for gateway, value in list(config.items()):
                 if gateway.lower() == "defaults":
                     self._validate(value, ['cc', 'to'])
                     self._groups[group] = value
@@ -232,9 +233,9 @@ class Config(object):
         try:
             group = self._gateway_group[gw_id]
             defaults = copy.copy(self._groups[group])
-            for key, value in self._gateways[gw_id].items():
+            for key, value in list(self._gateways[gw_id].items()):
                 if key == 'cc':
-                    if defaults.has_key('cc'):
+                    if 'cc' in defaults:
                         print("XXX 1 %s", defaults[key])
                         defaults[key].extend(value)
                         print("XXX 2 %s", defaults[key])
@@ -808,7 +809,7 @@ class Gateways(object):
 
     def clear(self):
         ''' Call clear function on each gateway '''
-        for gateway in self._gateways.values():
+        for gateway in list(self._gateways.values()):
             gateway.clear()
 
     def save(self):
@@ -855,7 +856,7 @@ class Gateways(object):
 
         if self._options.verbose:
             print("Found %d gateways:" % len(self._gateways))
-            for gateway in self._gateways.values():
+            for gateway in list(self._gateways.values()):
                 print("\t%s(%s) - %s" % (gateway.alias, gateway.gw_id, gateway.description))
 
         return True
@@ -875,7 +876,7 @@ class Gateways(object):
                 print("ERR: %s returns %d" % (" ".join(cmd), err.returncode), file=sys.stderr)
             raise GatewayError(err.output)
 
-        for gateway in self._gateways.values():
+        for gateway in list(self._gateways.values()):
             gateway.save_active()
 
         for line in lines.split("\n"):
@@ -929,12 +930,12 @@ class Gateways(object):
     @property
     def gw_ids(self):
         ''' Return a list of gateway ids '''
-        return self._gateways.keys()
+        return list(self._gateways.keys())
 
     @property
     def gateways(self):
         ''' Return a list of gateway objects '''
-        return self._gateways.values()
+        return list(self._gateways.values())
 
     @property
     def gateway(self, gw_id):
@@ -958,12 +959,12 @@ def gateway_email(options, user, gateways, alert=True):
         cc_list.add(dest)
         key = hash(",".join(sorted(cc_list)))
         cc_list.discard(dest)
-        if not to.has_key(key):
+        if key not in to:
             to[key] = dest
-        if not cc.has_key(key):
+        if key not in cc:
             cc[key] = cc_list
 
-        if not body.has_key(key):
+        if key not in body:
             body[key] = []
 
         # Print Alerts
@@ -981,7 +982,7 @@ def gateway_email(options, user, gateways, alert=True):
                                                           gateway.description,
                                                           rest))
 
-    for key in to.keys():
+    for key in list(to.keys()):
         sendmail(options,
                  to.get(key),
                  cc.get(key),
@@ -1028,7 +1029,7 @@ class User(object):
 
         pairs = self._get_response("user")
 
-        for key, value in pairs.items():
+        for key, value in list(pairs.items()):
             if key == 'Email':
                 self._email = value
             elif key == 'Username':
