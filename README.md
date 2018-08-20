@@ -153,7 +153,7 @@ ttn-nyc:
 # Docker 
 
 Work is in progress on building a Docker container to run
-ttn-monitor.  
+ttn-monitor.
 
 There are a couple of advantages of running ttn-monitor in a Docker
 container.  The first is that all pre-requesites can be included, both
