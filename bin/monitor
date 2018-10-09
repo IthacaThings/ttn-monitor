@@ -1177,6 +1177,10 @@ def parse_args():
                        dest="test", default=config.default('test', False),
                        action="store_true",
                        help="Don't send e-mail to victims")
+    group.add_argument("--do_summary",
+                       dest="do_summary", default=False,
+                       action="store_true",
+                       help="Send a daily summary")
 
     #   Other options
     group = parser.add_argument_group("Other options")
@@ -1279,7 +1283,7 @@ def main():
         time.sleep(options.timeout)
 
         # Send summary at midnight
-        if datetime.datetime.now().hour < last_time.hour:
+        if options.do_summary and datetime.datetime.now().hour < last_time.hour:
             gateway_email(options, user, gateways.gateways, alert=False)
 
         # Clear old notices
