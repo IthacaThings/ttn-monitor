@@ -517,7 +517,7 @@ class Gateway(object):
         distance = geopy.distance.vincenty(old, new)
         if distance.feet > 1000:
             result.append("moved %.2f miles" % distance.miles)
-        elif distance.feet > 60:
+        elif distance.feet > 100:
             result.append("moved %.0f feet" % distance.feet)
 
         if not result:
@@ -1164,7 +1164,7 @@ def parse_args():
                        dest="timeout", type=float, default=config.default('timeout', 300),
                        help="Timeout between polls, in seconds")
     group.add_argument("--late",
-                       dest="late", default=config.default('late', 90),
+                       dest="late", default=config.default('late', 300),
                        help="Interval to mark gateway as not responding")
     group.add_argument("--from",
                        dest="fromaddr", default=config.default('from', None),
