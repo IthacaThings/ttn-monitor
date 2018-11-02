@@ -780,7 +780,7 @@ class Gateway(object):
     def contact_email(self):
         ''' Contact email '''
 
-        return self._config.gateway(self._gw_id).get('to', self._info.get('Contact email'))
+        return self._config.gateway(self._gw_id).get('to') or self._info.get('Contact email')
 
     @property
     def cc(self):
@@ -1276,10 +1276,10 @@ def main():
 
             if gateway.notices():
                 if options.verbose:
-                    print("Need to notify %s about %s: %s" %
-                          (gateway.contact_email if gateway.contact_email else 'someone',
-                           gateway.name,
-                           gateway.description))
+                    print("Need to notify %s about %s: %s" % (
+                        gateway.contact_email or 'someone',
+                        gateway.alias,
+                        gateway.description))
                 alert_gateways.append(gateway)
 
         gateway_email(options, user, alert_gateways)
