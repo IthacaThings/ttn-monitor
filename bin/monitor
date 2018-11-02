@@ -12,6 +12,11 @@ import subprocess
 import sys
 import time
 
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+from dateutil.tz import tzlocal, tzoffset
+
 import geopy.distance
 
 try:
@@ -25,10 +30,6 @@ except ImportError:
     print("Please install PyYaml", file=sys.stderr)
     sys.exit(1)
 
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-from dateutil.tz import tzlocal, tzoffset
 
 """
 MIT License
@@ -158,7 +159,7 @@ class Config(object):
     def _validate(self, config, allowed=[]):
         """ Generic validation """
 
-        for key, value in config.items():
+        for key, value in list(config.items()):
             if key not in allowed:
                 raise self.ParseError("invalid Global key: %s" % (key))
             if key == 'cc':
@@ -194,7 +195,7 @@ class Config(object):
         if self._options.debug:
             print("Config: %s" % pprint.pformat(self._config_data))
 
-        for group, config in self._config_data.items():
+        for group, config in list(self._config_data.items()):
             if group.lower() == "global":
                 self._validate(config, ['cc', 'from', 'late', 'timeout', 'test'])
                 self._defaults = config
@@ -202,7 +203,7 @@ class Config(object):
                     print("Config: defaults %s" % pprint.pformat(self._defaults))
                 continue
 
-            for gateway, value in config.items():
+            for gateway, value in list(config.items()):
                 if gateway.lower() == "defaults":
                     self._validate(value, ['cc', 'to'])
                     self._groups[group] = value
@@ -232,9 +233,9 @@ class Config(object):
         try:
             group = self._gateway_group[gw_id]
             defaults = copy.copy(self._groups[group])
-            for key, value in self._gateways[gw_id].items():
+            for key, value in list(self._gateways[gw_id].items()):
                 if key == 'cc':
-                    if defaults.has_key('cc'):
+                    if 'cc' in defaults:
                         print("XXX 1 %s", defaults[key])
                         defaults[key].extend(value)
                         print("XXX 2 %s", defaults[key])
@@ -299,7 +300,7 @@ class Gateway(object):
         self._collaborators = {}
         self._frequency_plan = frequency_plan
         self._gw_id = gw_id
-        self._alias = gw_id
+        self._alias = None
         self._info = {}
         self._info_old = {}
         self._late = datetime.timedelta(0)
@@ -326,7 +327,7 @@ class Gateway(object):
             return 0
 
     def __repr__(self):
-        return "%s: %s %s %s %f, %f %s" % (self._alias,
+        return "%s: %s %s %s %f, %f %s" % (self._alias or "N/A",
                                            self._gw_id,
                                            self._activated,
                                            self._frequency_plan,
@@ -335,7 +336,7 @@ class Gateway(object):
                                            self._router)
 
     def __str__(self):
-        return "%s: %s %s %s %f, %f %s" % (self._alias,
+        return "%s: %s %s %s %f, %f %s" % (self._alias or "N/A",
                                            self._gw_id,
                                            self._activated,
                                            self._frequency_plan,
@@ -516,7 +517,7 @@ class Gateway(object):
         distance = geopy.distance.vincenty(old, new)
         if distance.feet > 1000:
             result.append("moved %.2f miles" % distance.miles)
-        elif distance.feet > 60:
+        elif distance.feet > 100:
             result.append("moved %.0f feet" % distance.feet)
 
         if not result:
@@ -673,12 +674,22 @@ class Gateway(object):
     def alias(self):
         ''' Get Alias '''
 
-        return self._config.gateway(self._gw_id).get('alias', self._gw_id)
+        if not self._alias:
+            self._alias = self._config.gateway(self._gw_id).get('alias', self._gw_id)
+        return self._alias
 
     @property
     def gw_id(self):
         ''' Get id '''
         return self._gw_id
+
+    @property
+    def name(self):
+        """ Pretty print the alias and ID """
+        name = self.alias
+        if self._gw_id != name:
+            name += '(' + self._gw_id + ')'
+        return name
 
     @property
     def activated(self):
@@ -808,7 +819,7 @@ class Gateways(object):
 
     def clear(self):
         ''' Call clear function on each gateway '''
-        for gateway in self._gateways.values():
+        for gateway in list(self._gateways.values()):
             gateway.clear()
 
     def save(self):
@@ -855,8 +866,8 @@ class Gateways(object):
 
         if self._options.verbose:
             print("Found %d gateways:" % len(self._gateways))
-            for gateway in self._gateways.values():
-                print("\t%s(%s) - %s" % (gateway.alias, gateway.gw_id, gateway.description))
+            for gateway in list(self._gateways.values()):
+                print("\t%s - %s" % (gateway.name, gateway.description))
 
         return True
 
@@ -875,7 +886,7 @@ class Gateways(object):
                 print("ERR: %s returns %d" % (" ".join(cmd), err.returncode), file=sys.stderr)
             raise GatewayError(err.output)
 
-        for gateway in self._gateways.values():
+        for gateway in list(self._gateways.values()):
             gateway.save_active()
 
         for line in lines.split("\n"):
@@ -929,12 +940,12 @@ class Gateways(object):
     @property
     def gw_ids(self):
         ''' Return a list of gateway ids '''
-        return self._gateways.keys()
+        return list(self._gateways.keys())
 
     @property
     def gateways(self):
         ''' Return a list of gateway objects '''
-        return self._gateways.values()
+        return list(self._gateways.values())
 
     @property
     def gateway(self, gw_id):
@@ -958,12 +969,12 @@ def gateway_email(options, user, gateways, alert=True):
         cc_list.add(dest)
         key = hash(",".join(sorted(cc_list)))
         cc_list.discard(dest)
-        if not to.has_key(key):
+        if key not in to:
             to[key] = dest
-        if not cc.has_key(key):
+        if key not in cc:
             cc[key] = cc_list
 
-        if not body.has_key(key):
+        if key not in body:
             body[key] = []
 
         # Print Alerts
@@ -976,12 +987,11 @@ def gateway_email(options, user, gateways, alert=True):
                 rest += "\n\tLog:\n"
                 rest += "\n\t".join(str(x) for x in gateway.log)
 
-        body[key].append("gateway %s(%s) '%s': \n\t%s" % (gateway.alias,
-                                                          gateway.gw_id,
-                                                          gateway.description,
-                                                          rest))
+        body[key].append("gateway %s '%s': \n\t%s" % (gateway.name,
+                                                      gateway.description,
+                                                      rest))
 
-    for key in to.keys():
+    for key in list(to.keys()):
         sendmail(options,
                  to.get(key),
                  cc.get(key),
@@ -1028,7 +1038,7 @@ class User(object):
 
         pairs = self._get_response("user")
 
-        for key, value in pairs.items():
+        for key, value in list(pairs.items()):
             if key == 'Email':
                 self._email = value
             elif key == 'Username':
@@ -1163,7 +1173,7 @@ def parse_args():
                        dest="timeout", type=float, default=config.default('timeout', 300),
                        help="Timeout between polls, in seconds")
     group.add_argument("--late",
-                       dest="late", default=config.default('late', 90),
+                       dest="late", default=config.default('late', 300),
                        help="Interval to mark gateway as not responding")
     group.add_argument("--from",
                        dest="fromaddr", default=config.default('from', None),
@@ -1176,6 +1186,10 @@ def parse_args():
                        dest="test", default=config.default('test', False),
                        action="store_true",
                        help="Don't send e-mail to victims")
+    group.add_argument("--do_summary",
+                       dest="do_summary", default=False,
+                       action="store_true",
+                       help="Send a daily summary")
 
     #   Other options
     group = parser.add_argument_group("Other options")
@@ -1262,10 +1276,9 @@ def main():
 
             if gateway.notices():
                 if options.verbose:
-                    print("Need to notify %s about %s(%s): %s" %
+                    print("Need to notify %s about %s: %s" %
                           (gateway.contact_email if gateway.contact_email else 'someone',
-                           gateway.alias,
-                           gateway.gw_id,
+                           gateway.name,
                            gateway.description))
                 alert_gateways.append(gateway)
 
@@ -1278,7 +1291,7 @@ def main():
         time.sleep(options.timeout)
 
         # Send summary at midnight
-        if datetime.datetime.now().hour < last_time.hour:
+        if options.do_summary and datetime.datetime.now().hour < last_time.hour:
             gateway_email(options, user, gateways.gateways, alert=False)
 
         # Clear old notices
