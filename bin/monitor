@@ -64,6 +64,7 @@ _ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
 # Extract key and value
 _INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
 
+
 def sendmail(options, to, cc, subject, body):
     ''' Do the work of sending mail '''
 
@@ -281,6 +282,14 @@ class Notice(object):
 #	Gateway list
 #
 
+class UserToken(Exception):
+    ''' User exceptions '''
+    pass
+
+class UserError(Exception):
+    ''' User exceptions '''
+    pass
+
 class GatewayError(Exception):
     ''' For gateway exceptions '''
     pass
@@ -353,7 +362,7 @@ class Gateway(object):
 
         try:
             logging.debug("DBG: %s", " ".join(cmd))
-            lines = subprocess.check_output(cmd)
+            lines = subprocess.check_output(cmd, encoding='UTF-8')
         except subprocess.CalledProcessError as err:
             logging.info("ERR: %s returns %d", " ".join(cmd), err.returncode)
             lines = err.output
@@ -370,6 +379,8 @@ class Gateway(object):
                 continue
             if sline.startswith("FATAL"):
                 logging.info(sline)
+                if sline.find('Please login with ttnctl user login') != -1:
+                    raise UserToken("Go to %s to get an OAuth token" % _REGISTER_URL)
                 raise GatewayError(sline)
 
             if sline == "Collaborators:":
@@ -407,8 +418,8 @@ class Gateway(object):
         try:
             self._info_old = copy.copy(self._info)
             self._get_response("gateway", "info", self._gw_id)
-        except GatewayError as err:
-            logging.error(err)
+        except (UserToken, GatewayError) as err:
+            logging.error(err.args[0])
 
     def get_status(self):
         """ Get additional info via 'info' subcommand """
@@ -426,7 +437,11 @@ class Gateway(object):
         except GatewayError as err:
             self._info['Last seen'] = None
             self._info['Reported time'] = None
-            self._status_error['current'] = err.message
+            self._status_error['current'] = err.args[0]
+        except UserToken as err:
+            logging.error(err.message)
+            return
+
         self._status_time = datetime.datetime.now(tzlocal())
 
     def check_status(self):
@@ -804,7 +819,7 @@ class Gateways(object):
     def load(self):
         ''' Load the list of gateways '''
         filep = open(os.path.expanduser(self._options.statusdb), 'rb')
-        self._gateways = pickle.load(filep)
+        self._gateways = pickle.load(filep, encoding='bytes')
         self._loaded = True
         logging.info("Loaded prior status about %d gateways from %s",
                      len(self._gateways),
@@ -850,7 +865,7 @@ class Gateways(object):
                 self._list()
                 break
             except GatewayError as err:
-                logging.error(err)
+                logging.error(err.args[0])
                 time.sleep(delay*30)
             else:
                 # XXX - What to do here?
@@ -868,7 +883,7 @@ class Gateways(object):
         try:
             cmd = [self._options.binary, "gateway", "list"]
             logging.debug("DBG: %s", " ".join(cmd))
-            lines = subprocess.check_output(cmd)
+            lines = subprocess.check_output(cmd, encoding='UTF-8')
         except OSError as err:
             sys.exit("%s: %s" % (self._options.binary, err))
         except subprocess.CalledProcessError as err:
@@ -886,7 +901,7 @@ class Gateways(object):
                 logging.debug("DBG: %s", line)
                 continue
             if sline.startswith("FATAL "):
-                loging.info(sline)
+                logging.info(sline)
                 raise GatewayError(sline)
             if sline.startswith("ID "):
                 continue
@@ -918,8 +933,8 @@ class Gateways(object):
                     gateway.get_info()
                     break
                 except GatewayError as err:
-                    logging.error(err)
-                    notice = err
+                    notice = err.args[0]
+                    logging.error(notice)
                     time.sleep(5*delay)
                 else:
                     gateway.notice(notice)
@@ -989,14 +1004,6 @@ def gateway_email(options, user, gateways, alert=True):
 class User(object):
     """ Get info about user """
 
-    class UserToken(Exception):
-        ''' User exceptions '''
-        pass
-
-    class UserError(Exception):
-        ''' User exceptions '''
-        pass
-
     _BRACKETS_RE = re.compile(r'{(.*)}')
 
     def __init__(self, options):
@@ -1007,17 +1014,17 @@ class User(object):
         try:
             self._user()
             return
-        except self.UserToken as err:
+        except UserToken as err:
             if not options.token:
                 sys.exit(err.message)
-        except self.UserError as err:
+        except UserError as err:
             sys.exit(err.message)
 
         try:
             if not self._login(options.token):
                 sys.exit(1)
             self._user()
-        except (self.UserError, self.UserToken) as err:
+        except (UserError, UserToken) as err:
             sys.exit(err.message)
 
     def _user(self):
@@ -1041,7 +1048,7 @@ class User(object):
 
         try:
             self._get_response("user", "login", token)
-        except (self.UserError, self.UserToken) as err:
+        except (UserError, UserToken) as err:
             logging.error(err.message)
             return False
 
@@ -1055,9 +1062,9 @@ class User(object):
 
         try:
             logging.debug("DBG: %s", " ".join(cmd))
-            lines = subprocess.check_output(cmd)
+            lines = subprocess.check_output(cmd, encoding='UTF-8')
         except OSError as err:
-            raise self.UserError("%s: %s" % (self._options.binary, err))
+            raise UserError("%s: %s" % (self._options.binary, err))
         except subprocess.CalledProcessError as err:
             lines = err.output
 
@@ -1073,8 +1080,8 @@ class User(object):
 
             if sline.startswith("FATAL"):
                 if sline.find('Please login with ttnctl user login') != -1:
-                    raise self.UserToken("Go to %s to get an OAuth token" % _REGISTER_URL)
-                raise self.UserError(sline)
+                    raise UserToken("Go to %s to get an OAuth token" % _REGISTER_URL)
+                raise UserError(sline)
 
             match = _INFO_RE.match(line)
             if not match:
