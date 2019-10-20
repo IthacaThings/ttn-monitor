@@ -153,7 +153,7 @@ class Config(object):
 
         # Parse it
         try:
-            self._config_data = yaml.load(config_file)
+            self._config_data = yaml.load(config_file, Loader=yaml.Loader)
         except yaml.scanner.ScannerError as err:
             raise self.ParseError("YAML Parse error on %s: %s" % (filename, err))
 
