@@ -4,6 +4,7 @@ from __future__ import print_function
 import argparse
 import copy
 import datetime
+import logging
 import os
 import pprint
 import re
@@ -80,12 +81,13 @@ def sendmail(options, to, cc, subject, body):
     msg['Cc'] = ", ".join(cc)
     msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
-    if options.debug:
-        print("MAIL: From: %s To: %s Cc: %s Subject: %s" % (msg.get('From'),
-                                                            msg.get('To'),
-                                                            msg.get('Cc'),
-                                                            msg.get('Subject')))
-        print("SENDMAIL(%s -> %s)" % (options.fromaddr, ",".join(dest)))
+    logging.debug("MAIL: From: %s To: %s Cc: %s Subject: %s",
+                  msg.get('From'),
+                  msg.get('To'),
+                  msg.get('Cc'),
+                  msg.get('Subject'))
+    logging.debug("SENDMAIL(%s -> %s)",
+                  options.fromaddr, ",".join(dest))
     server = smtplib.SMTP('localhost')
     try:
         #        server.set_debuglevel(True)
@@ -99,8 +101,7 @@ def sendmail(options, to, cc, subject, body):
             server.ehlo() # re-identify ourselves over TLS connection
 
         resp = server.sendmail(options.fromaddr, dest, msg.as_string())
-        if options.debug:
-            print("SENDMAIL: %s" % resp)
+        logging.debug("SENDMAIL: %s", resp)
     finally:
         server.quit()
 
@@ -129,15 +130,13 @@ class Config(object):
             config_files = ['./.ttn-monitor.yaml', '~/.ttn-monitor.yaml']
         for config_file in config_files:
             try:
-                if self._options.debug:
-                    print("Reading %s" % config_file)
+                logging.debug("Reading %s", config_file)
                 self._config_load(os.path.expanduser(config_file))
             except IOError as error:
                 if self._options.debug or self._options.config:
-                    print(error)
+                    logging.warning(error)
                 continue
-            if self._options.debug:
-                print("Parsing %s" % config_file)
+            logging.debug("Parsing %s", config_file)
             self._config_top()
             break
 
@@ -192,31 +191,28 @@ class Config(object):
     def _config_top(self):
         """ Parse the top level config items """
 
-        if self._options.debug:
-            print("Config: %s" % pprint.pformat(self._config_data))
+        logging.debug("Config: %s",
+                      pprint.pformat(self._config_data))
 
         for group, config in list(self._config_data.items()):
             if group.lower() == "global":
                 self._validate(config, ['cc', 'from', 'late', 'timeout', 'test'])
                 self._defaults = config
-                if self._options.debug:
-                    print("Config: defaults %s" % pprint.pformat(self._defaults))
+                logging.debug("Config: defaults %s", pprint.pformat(self._defaults))
                 continue
 
             for gateway, value in list(config.items()):
                 if gateway.lower() == "defaults":
                     self._validate(value, ['cc', 'to'])
                     self._groups[group] = value
-                    if self._options.debug:
-                        print("Config: %s: %s" % (group, value))
+                    logging.debug("Config: %s: %s", group, value)
                 else:
                     if not isinstance(gateway, str):
                         self.ParseError("Gateway ID is not a string: %s" % gateway)
                     self._validate(value, ['to', 'cc', 'alias'])
                     self._gateway_group[gateway] = group
                     self._gateways[gateway] = value
-                    if self._options.debug:
-                        print("Config: %s: %s" % (gateway, pprint.pformat(value)))
+                    logging.debug("Config: %s: %s", gateway, pprint.pformat(value))
 
     def __str__(self):
         """ Show what we have """
@@ -236,9 +232,9 @@ class Config(object):
             for key, value in list(self._gateways[gw_id].items()):
                 if key == 'cc':
                     if 'cc' in defaults:
-                        print("XXX 1 %s", defaults[key])
+                        logging.debug("XXX 1 %s", defaults[key])
                         defaults[key].extend(value)
-                        print("XXX 2 %s", defaults[key])
+                        logging.debug("XXX 2 %s", defaults[key])
                 defaults[key] = value
         except KeyError:
             pass
@@ -248,10 +244,10 @@ class Config(object):
     def default(self, value, default=None):
         ''' Return a default value '''
 
-        if self._options.debug:
-            print("Config.default(%s, %s): %s" % (value,
-                                                  default,
-                                                  self._defaults.get(value, default)))
+        logging.debug("Config.default(%s, %s): %s",
+                      value,
+                      default,
+                      self._defaults.get(value, default))
         return self._defaults.get(value, default)
 
 class Notice(object):
@@ -351,12 +347,10 @@ class Gateway(object):
         cmd.extend(args)
 
         try:
-            if self._options.debug:
-                print("DBG: %s" % " ".join(cmd))
+            logging.debug("DBG: %s", " ".join(cmd))
             lines = subprocess.check_output(cmd)
         except subprocess.CalledProcessError as err:
-            if self._options.verbose:
-                print("ERR: %s returns %d" % (" ".join(cmd), err.returncode), file=sys.stderr)
+            logging.info("ERR: %s returns %d", " ".join(cmd), err.returncode)
             lines = err.output
 
         collaborators = False
@@ -367,12 +361,10 @@ class Gateway(object):
             if sline == "":
                 continue
             if sline.startswith("INFO"):
-                if self._options.debug:
-                    print("DBG: %s" % line)
+                logging.debug("DBG: %s", line)
                 continue
             if sline.startswith("FATAL"):
-                if self._options.verbose:
-                    print(sline, file=sys.stderr)
+                logging.info(sline)
                 raise GatewayError(sline)
 
             if sline == "Collaborators:":
@@ -405,20 +397,18 @@ class Gateway(object):
     def get_info(self):
         """ Get additional info via 'info' subcommand """
 
-        if self._options.debug:
-            print("GET INFO: %s" % self)
+        logging.debug("GET INFO: %s", self)
 
         try:
             self._info_old = copy.copy(self._info)
             self._get_response("gateway", "info", self._gw_id)
         except GatewayError as err:
-            print(err)
+            logging.error(err)
 
     def get_status(self):
         """ Get additional info via 'info' subcommand """
 
-        if self._options.debug:
-            print("GET STATUS: %s" % self)
+        logging.debug("GET STATUS: %s", self)
 
         try:
             cmd = ["gateway", "status", self._gw_id]
@@ -601,8 +591,7 @@ class Gateway(object):
             return
 
         notice = Notice(msg)
-        if self._options.debug:
-            print("NOTICE: %s" % notice)
+        logging.debug("NOTICE: %s", notice)
         if not logonly:
             self._notices.append(notice)
         self._log.append("%s %s" % (datetime.datetime.now(tzlocal()).strftime("%F %R %Z"), notice))
@@ -805,16 +794,16 @@ class Gateways(object):
             try:
                 self.load()
             except (EOFError, IOError, pickle.PickleError) as error:
-                print(error, file=sys.stderr)
+                logging.error(error)
 
     def load(self):
         ''' Load the list of gateways '''
         filep = open(os.path.expanduser(self._options.statusdb), 'rb')
         self._gateways = pickle.load(filep)
         self._loaded = True
-        if self._options.verbose:
-            print("Loaded prior status about %d gateways from %s" % (len(self._gateways),
-                                                                     self._options.statusdb))
+        logging.info("Loaded prior status about %d gateways from %s",
+                     len(self._gateways),
+                     self._options.statusdb)
         filep.close()
 
     def clear(self):
@@ -829,45 +818,42 @@ class Gateways(object):
         try:
             filep = open(os.path.expanduser(self._options.statusdb), 'wb')
         except IOError as error:
-            print(error, file=sys.stderr)
+            logging.error(error)
             return
 
         try:
             pickle.dump(self._gateways, filep, protocol=-1)
         except pickle.PickleError as error:
-            print(error, file=sys.stderr)
+            logging.error(error)
 
         if not filep:
             return
 
         try:
             filep.close()
-            if self._options.verbose:
-                print("Wrote prior status to %s" % self._options.statusdb)
+            logging.info("Wrote prior status to %s", self._options.statusdb)
         except IOError as error:
-            print(error, file=sys.stderr)
+            logging.error(error)
 
     def poll(self):
         ''' Update the list of gateways'''
 
-        if self._options.verbose:
-            print("Polling gateways")
+        logging.info("Polling gateways")
 
         for delay in range(1, 5):
             try:
                 self._list()
                 break
             except GatewayError as err:
-                print(err, file=sys.stderr)
+                logging.error(err)
                 time.sleep(delay*30)
             else:
                 # XXX - What to do here?
                 pass
 
-        if self._options.verbose:
-            print("Found %d gateways:" % len(self._gateways))
-            for gateway in list(self._gateways.values()):
-                print("\t%s - %s" % (gateway.name, gateway.description))
+        logging.info("Found %d gateways:", self._gateways)
+        for gateway in list(self._gateways.values()):
+            logging.info("\t%s - %s", gateway.name, gateway.description)
 
         return True
 
@@ -876,14 +862,12 @@ class Gateways(object):
 
         try:
             cmd = [self._options.binary, "gateway", "list"]
-            if self._options.debug:
-                print("DBG: %s" % " ".join(cmd))
+            logging.debug("DBG: %s", " ".join(cmd))
             lines = subprocess.check_output(cmd)
         except OSError as err:
             sys.exit("%s: %s" % (self._options.binary, err))
         except subprocess.CalledProcessError as err:
-            if self._options.verbose:
-                print("ERR: %s returns %d" % (" ".join(cmd), err.returncode), file=sys.stderr)
+            logging.info("ERR: %s returns %d", " ".join(cmd), err.returncode)
             raise GatewayError(err.output)
 
         for gateway in list(self._gateways.values()):
@@ -894,12 +878,10 @@ class Gateways(object):
             if sline == "":
                 continue
             if sline.startswith("INFO "):
-                if self._options.debug:
-                    print("DBG: %s" % line)
+                logging.debug("DBG: %s", line)
                 continue
             if sline.startswith("FATAL "):
-                if self._options.verbose:
-                    print(sline, file=sys.stderr)
+                loging.info(sline)
                 raise GatewayError(sline)
             if sline.startswith("ID "):
                 continue
@@ -931,7 +913,7 @@ class Gateways(object):
                     gateway.get_info()
                     break
                 except GatewayError as err:
-                    print(err, file=sys.stderr)
+                    logging.error(err)
                     notice = err
                     time.sleep(5*delay)
                 else:
@@ -1055,7 +1037,7 @@ class User(object):
         try:
             self._get_response("user", "login", token)
         except (self.UserError, self.UserToken) as err:
-            print(err.message, file=sys.stderr)
+            logging.error(err.message)
             return False
 
         return True
@@ -1067,8 +1049,7 @@ class User(object):
         cmd.extend(args)
 
         try:
-            if self._options.debug:
-                print("DBG: %s" % " ".join(cmd))
+            logging.debug("DBG: %s", " ".join(cmd))
             lines = subprocess.check_output(cmd)
         except OSError as err:
             raise self.UserError("%s: %s" % (self._options.binary, err))
@@ -1082,8 +1063,7 @@ class User(object):
             if sline == "":
                 continue
             if sline.startswith("INFO"):
-                if self._options.debug:
-                    print("DBG: %s" % line)
+                logging.debug("DBG: %s", line)
                 continue
 
             if sline.startswith("FATAL"):
@@ -1241,11 +1221,29 @@ def parse_args():
 
     return options, config
 
+def init_logging(options):
+    """ Set up logging """
+
+    logger = logging.getLogger()
+    logger.handlers = []
+    logger.addHandler(logging.StreamHandler())
+    logging.basicConfig(format='%(asctime)s %(message)s')
+    if options.debug:
+        logger.setLevel('DEBUG')
+    elif options.verbose:
+        logger.setLevel('INFO')
+    else:
+        logger.setLevel('WARNING')
+
+    return logger
+
 def main():
     """ Figure out what we should do """
 
     # Read config file and parse options
     options, config = parse_args()
+
+    init_logging(options)
 
     # Get user info
     user = User(options)
@@ -1259,7 +1257,7 @@ def main():
         for gateway in gateways.gateways:
             if gateway.is_active():
                 gateway.get_status()
-            print("%s:\n%s\n" % (gateway.alias, "\n".join(gateway.pretty())))
+                logging.warning("%s:\n%s\n", gateway.alias, "\n".join(gateway.pretty()))
         sys.exit(0)
 
     while gateways.poll():
@@ -1275,11 +1273,10 @@ def main():
                 gateway.check_status()
 
             if gateway.notices():
-                if options.verbose:
-                    print("Need to notify %s about %s: %s" % (
-                        gateway.contact_email or 'someone',
-                        gateway.alias,
-                        gateway.description))
+                logging.info("Need to notify %s about %s: %s",
+                             gateway.contact_email or 'someone',
+                             gateway.alias,
+                             gateway.description)
                 alert_gateways.append(gateway)
 
         gateway_email(options, user, alert_gateways)
