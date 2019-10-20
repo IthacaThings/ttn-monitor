@@ -1231,8 +1231,10 @@ def init_logging(options):
 
     logger = logging.getLogger()
     logger.handlers = []
-    logger.addHandler(logging.StreamHandler())
-    logging.basicConfig(format='%(asctime)s %(message)s')
+    stream = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s %(message)s')
+    stream.setFormatter(formatter)
+    logger.addHandler(stream)
     if options.debug:
         logger.setLevel('DEBUG')
     elif options.verbose:
