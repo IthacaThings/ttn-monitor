@@ -88,7 +88,12 @@ def sendmail(options, to, cc, subject, body):
                   msg.get('Subject'))
     logging.debug("SENDMAIL(%s -> %s)",
                   options.fromaddr, ",".join(dest))
-    server = smtplib.SMTP('localhost')
+    try:
+        server = smtplib.SMTP('localhost')
+    except ConnectionRefusedError:
+        logging.error('Unable to send mail')
+        return
+
     try:
         #        server.set_debuglevel(True)
 
