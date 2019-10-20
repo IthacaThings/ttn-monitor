@@ -439,7 +439,7 @@ class Gateway(object):
             self._info['Reported time'] = None
             self._status_error['current'] = err.args[0]
         except UserToken as err:
-            logging.error(err.message)
+            logging.error(err)
             return
 
         self._status_time = datetime.datetime.now(tzlocal())
