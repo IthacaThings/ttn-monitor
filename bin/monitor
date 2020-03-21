@@ -5,6 +5,7 @@ import argparse
 import copy
 import datetime
 import logging
+from logging.handlers import SysLogHandler
 import os
 import pprint
 import re
@@ -1234,18 +1235,21 @@ def init_logging(options):
 
     logger = logging.getLogger()
     logger.handlers = []
-    stream = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s %(message)s')
-    stream.setFormatter(formatter)
-    logger.addHandler(stream)
+    syslog_format = '%s[%%(process)s]: %%(message)s' % (os.path.basename(sys.argv[0]))
+    syslog_handler = SysLogHandler(address="/dev/log",
+                                   facility=SysLogHandler.LOG_DAEMON)
+    syslog_handler.setFormatter(logging.Formatter(syslog_format))
+    if not sys.stdout.isatty():
+        logger.addHandler(syslog_handler)
+    else:
+        logger.addHandler(logging.StreamHandler(stream=sys.stdout))
+
     if options.debug:
         logger.setLevel('DEBUG')
     elif options.verbose:
         logger.setLevel('INFO')
     else:
         logger.setLevel('WARNING')
-
-    return logger
 
 def main():
     """ Figure out what we should do """
