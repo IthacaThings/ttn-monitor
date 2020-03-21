@@ -869,7 +869,7 @@ class Gateways(object):
                 # XXX - What to do here?
                 pass
 
-        logging.info("Found %d gateways:", self._gateways)
+        logging.info("Found %d gateways:", len(self._gateways))
         for gateway in list(self._gateways.values()):
             logging.info("\t%s - %s", gateway.name, gateway.description)
 
