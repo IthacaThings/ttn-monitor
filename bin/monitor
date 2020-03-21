@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+"cc"#!/usr/bin/env python3
 
 from __future__ import print_function
 import argparse
@@ -64,22 +64,21 @@ _ANSI_RE = re.compile(r'\x1b\[\d+[A-Za-z]')
 # Extract key and value
 _INFO_RE = re.compile(r"^\s+(?P<key>[A-za-z ]+):\s(?P<value>.*)\s*$")
 
-
-def sendmail(options, to, cc, subject, body):
+def sendmail(options, to_addr, cc_addr, subject, body):
     ''' Do the work of sending mail '''
 
     dest = set()
     if options.test:
         dest.add(options.fromaddr)
     else:
-        dest.add(to)
-        dest.update(cc)
+        dest.add(to_addr)
+        dest.update(cc_addr)
 
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = options.fromaddr
-    msg['To'] = to
-    msg['Cc'] = ", ".join(cc)
+    msg['To'] = to_addr
+    msg['Cc'] = ", ".join(cc_addr)
     msg.attach(MIMEText("\n\n".join(body), 'plain'))
 
     logging.debug("MAIL: From: %s To: %s Cc: %s Subject: %s",
@@ -111,7 +110,7 @@ def sendmail(options, to, cc, subject, body):
     finally:
         server.quit()
 
-class Config(object):
+class Config():
     """ Config file parsing """
 
     class ParseError(Exception):
@@ -790,13 +789,13 @@ class Gateway():
         return self._config.gateway(self._gw_id).get('to') or self._info.get('Contact email')
 
     @property
-    def cc(self):
+    def cc_addr(self):
         ''' CC list '''
 
         return self._config.gateway(self._gw_id).get('cc', [])
 
 
-class Gateways(object):
+class Gateways():
     ''' Hold and dump/restore a list of Gateways '''
 
     #        ID              Activated       Frequency Plan  Coordinates
@@ -816,13 +815,12 @@ class Gateways(object):
 
     def load(self):
         ''' Load the list of gateways '''
-        filep = open(os.path.expanduser(self._options.statusdb), 'rb')
-        self._gateways = pickle.load(filep, encoding='bytes')
-        self._loaded = True
-        logging.info("Loaded prior status about %d gateways from %s",
-                     len(self._gateways),
-                     self._options.statusdb)
-        filep.close()
+        with open(os.path.expanduser(self._options.statusdb), 'rb') as filep:
+            self._gateways = pickle.load(filep, encoding='bytes')
+            self._loaded = True
+            logging.info("Loaded prior status about %d gateways from %s",
+                         len(self._gateways),
+                         self._options.statusdb)
 
     def clear(self):
         ''' Call clear function on each gateway '''
@@ -956,23 +954,23 @@ def gateway_email(options, user, gateways, alert=True):
     ''' Send e-mail about each gateway '''
 
     body = dict()
-    to = dict()
-    cc = dict()
+    to_addr = dict()
+    cc_addr = dict()
 
     for gateway in gateways:
         dest = gateway.contact_email or options.fromaddr
         cc_list = set()
-        if options.cc:
-            cc_list.update(options.cc)
-        if gateway.cc:
-            cc_list.update(gateway.cc)
+        if options.cc_addr:
+            cc_list.update(options.cc_addr)
+        if gateway.cc_addr:
+            cc_list.update(gateway.cc_addr)
         cc_list.add(dest)
         key = hash(",".join(sorted(cc_list)))
         cc_list.discard(dest)
-        if key not in to:
-            to[key] = dest
-        if key not in cc:
-            cc[key] = cc_list
+        if key not in to_addr:
+            to_addr[key] = dest
+        if key not in cc_addr:
+            cc_addr[key] = cc_list
 
         if key not in body:
             body[key] = []
@@ -991,15 +989,15 @@ def gateway_email(options, user, gateways, alert=True):
                                                       gateway.description,
                                                       rest))
 
-    for key in list(to.keys()):
+    for key in list(to_addr.keys()):
         sendmail(options,
-                 to.get(key),
-                 cc.get(key),
+                 to_addr.get(key),
+                 cc_addr.get(key),
                  "TTN Gateway %s %s" % ("Alert!" if alert else "Summary",
                                         datetime.datetime.now(tzlocal()).strftime("%F %R %Z")),
                  body.get(key))
 
-class User(object):
+class User():
     """ Get info about user """
 
     _BRACKETS_RE = re.compile(r'{(.*)}')
@@ -1169,7 +1167,7 @@ def parse_args():
                        dest="fromaddr", default=config.default('from', None),
                        help="From address for notification emails")
     group.add_argument("--cc",
-                       dest="cc", default=config.default('cc', []),
+                       dest="cc_addr", default=config.default('cc', []),
                        action="append",
                        help="List of e-mail cc's")
     group.add_argument("--test",
