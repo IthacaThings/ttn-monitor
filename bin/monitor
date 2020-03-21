@@ -116,7 +116,6 @@ class Config(object):
 
     class ParseError(Exception):
         """ Handle a Parse Error """
-        pass
 
     def __init__(self, options):
         self._options = options
@@ -176,7 +175,7 @@ class Config(object):
                             raise self.ParseError("%s is not a string" % val)
                 else:
                     raise self.ParseError("%s is not a list or string" % value)
-            elif key == 'from' or key == 'to':
+            elif key in ['from', 'to']:
                 if not isinstance(value, str):
                     raise self.ParseError("%s is not a string" % val)
             elif key == 'late':
@@ -256,7 +255,7 @@ class Config(object):
                       self._defaults.get(value, default))
         return self._defaults.get(value, default)
 
-class Notice(object):
+class Notice():
     """ Hold a notice """
 
     def __init__(self, message):
@@ -284,17 +283,15 @@ class Notice(object):
 
 class UserToken(Exception):
     ''' User exceptions '''
-    pass
 
 class UserError(Exception):
     ''' User exceptions '''
-    pass
+
 
 class GatewayError(Exception):
     ''' For gateway exceptions '''
-    pass
 
-class Gateway(object):
+class Gateway():
     """Class to hold Gateway info"""
 
     # 2017-08-17 18:05:16.935947527 -0400 EDT
@@ -302,7 +299,6 @@ class Gateway(object):
     _LOCATION_RE = re.compile(r'\((?P<lat>-?\d+\.\d+),\s*(?P<lon>-?\d+\.\d+);\s+(?P<source>.*)\)$')
 
     def __init__(self, options, config, gw_id, frequency_plan, latitude, longitude, router):
-        """"""
         self._options = options
         self._config = config
         self._activated = False
@@ -331,10 +327,11 @@ class Gateway(object):
 
         if var > 0:
             return 1
-        elif var < 0:
+
+        if var < 0:
             return -1
-        else:
-            return 0
+
+        return 0
 
     def __repr__(self):
         return "%s: %s %s %s %f, %f %s" % (self._alias or "N/A",
@@ -502,7 +499,7 @@ class Gateway(object):
                                                          self._info[key])
                     if key.startswith('Location.'):
                         result = self._location_match(key)
-                        if result == False:
+                        if not result:
                             continue
                     if result:
                         msg += ": " + result
@@ -534,7 +531,7 @@ class Gateway(object):
             return False
 
         return ", ".join(result)
-                                
+
     def pretty(self):
         ''' Pretty print a bunch of gateway info '''
 
@@ -572,18 +569,19 @@ class Gateway(object):
             if key == '%Config':
                 lines.append("\tConfig:")
                 config = self._config.gateway(self.gw_id)
-                for key in sorted(config.keys()):
-                    value = config.get(key)
+                for key1 in sorted(config.keys()):
+                    value = config.get(key1)
                     if isinstance(value, list):
                         value = ", ".join(value)
-                    lines.append("\t\t%15s: %s" % (key.capitalize(), value))
+                    lines.append("\t\t%15s: %s" % (key1.capitalize(), value))
             elif key.startswith('%'):
                 lines.append("\t%s:" % key[1:])
             else:
                 desc = key
                 if desc == 'Last seen':
                     if self.last_seen:
-                        value = "%d seconds ago" % (self.status_time - self.last_seen).total_seconds()
+                        value = "%d seconds ago" % (
+                            self.status_time - self.last_seen).total_seconds()
                     else:
                         value = "N/A"
                 elif desc == 'Reported time':
@@ -1016,16 +1014,16 @@ class User(object):
             return
         except UserToken as err:
             if not options.token:
-                sys.exit(err.message)
+                sys.exit(err)
         except UserError as err:
-            sys.exit(err.message)
+            sys.exit(err)
 
         try:
             if not self._login(options.token):
                 sys.exit(1)
             self._user()
         except (UserError, UserToken) as err:
-            sys.exit(err.message)
+            sys.exit(err)
 
     def _user(self):
         """ Get user info """
@@ -1049,7 +1047,7 @@ class User(object):
         try:
             self._get_response("user", "login", token)
         except (UserError, UserToken) as err:
-            logging.error(err.message)
+            logging.error(err)
             return False
 
         return True
@@ -1315,4 +1313,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print()
         sys.exit(1)
-
